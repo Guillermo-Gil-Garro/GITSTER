@@ -49,7 +49,7 @@ https://guillermo-gil-garro.github.io/GITSTER/
 
 ## 🌐 PUBLICAR / EDITAR LA WEB DE REGLAS (SIN MISTERIOS)
 
-Este repo usa **:contentReference[oaicite:1]{index=1} Pages** apuntando a la carpeta `/docs`.
+Este repo usa **GitHub Pages** apuntando a la carpeta `/docs`.
 
 - La página principal **DEBE** llamarse: `docs/index.html`
 - Las imágenes deben estar en rutas correctas (ej. `docs/assets/...`)
