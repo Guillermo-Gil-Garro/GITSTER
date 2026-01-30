@@ -8,12 +8,15 @@
   <meta name="theme-color" content="#060814" />
 
   <!--
-    ASSETS (obligatorio para que se vea como tu imagen B)
-    Pon estos 3 PNG en la MISMA carpeta que este HTML y con estos nombres EXACTOS:
-      - gitster_bg.png        (Imagen A: fondo)
-      - gitster_title.png     (Imagen B: título)
-      - gitster_tagline.png   (Imagen C: subtítulo)
+    ASSETS
+    Crea una carpeta "assets" al mismo nivel que este index.html y mete dentro:
+      - assets/gitster_bg.png
+      - assets/gitster_hero.png   (imagen combinada: título + subtítulo)
   -->
+
+  <!-- Preload (menos parpadeo / más rápido) -->
+  <link rel="preload" as="image" href="assets/gitster_bg.png" />
+  <link rel="preload" as="image" href="assets/gitster_hero.png" />
 
   <style>
     :root{
@@ -35,10 +38,6 @@
       --glowM: 0 0 18px rgba(255,43,214,.35), 0 0 42px rgba(255,43,214,.18);
 
       --max: 980px;
-
-      /* Ajuste fino del recorte de las imágenes (para clavarlo como la imagen B) */
-      --title-crop-y: 52%;
-      --tagline-crop-y: 56%;
     }
 
     *{box-sizing:border-box}
@@ -52,7 +51,7 @@
       overflow-x:hidden;
     }
 
-    /* Fondo (Imagen A) */
+    /* Fondo (assets/gitster_bg.png) */
     .bg{
       position:fixed;
       inset:0;
@@ -61,7 +60,7 @@
         radial-gradient(1200px 700px at 50% 10%, rgba(124,58,237,.18), transparent 60%),
         radial-gradient(900px 700px at 70% 55%, rgba(255,43,214,.10), transparent 62%),
         radial-gradient(900px 700px at 25% 75%, rgba(34,211,238,.09), transparent 62%),
-        url("gitster_bg.png");
+        url("assets/gitster_bg.png");
       background-size: auto, auto, auto, cover;
       background-position: center, center, center, center;
       background-repeat:no-repeat;
@@ -145,14 +144,10 @@
     .wrap{
       max-width: var(--max);
       margin: 0 auto;
-      padding: 6px 16px 90px; /* << más compacto, pega el contenido al hero */
+      padding: 6px 16px 90px;
     }
 
-    /* HERO: aquí está el cambio clave para clavar imagen B:
-       - altura compacta
-       - las imágenes NO “mandan” la altura por transparencia
-       - se recortan con object-fit: cover + contenedores con altura fija
-    */
+    /* HERO con UNA imagen combinada */
     header.hero{
       position:relative;
       padding: 8px 16px 6px;
@@ -170,90 +165,46 @@
       overflow:hidden;
       backdrop-filter: blur(8px);
       -webkit-backdrop-filter: blur(8px);
-
-      /* compacto, como tu imagen B */
-      padding: 18px 16px 14px;
+      padding: 14px 12px 10px;
     }
 
-    .hero-content{
-      display:flex;
-      flex-direction:column;
-      align-items:center;
-      justify-content:flex-start;
-      gap: 10px;              /* << título y subtítulo juntos */
-      text-align:center;
-    }
-
-    /* Contenedores con altura fija -> recortan transparencias */
-    .hero-title{
-      width: min(920px, 96%);
-      height: clamp(130px, 14vw, 210px);
-      overflow:hidden;
+    .hero-combined{
+      width: min(980px, 100%);
+      height: clamp(220px, 46vw, 360px); /* clave: buen tamaño en móvil sin “raros” */
       display:flex;
       align-items:center;
       justify-content:center;
-    }
-    .hero-tagline{
-      width: min(860px, 94%);
-      height: clamp(78px, 8.2vw, 120px);
       overflow:hidden;
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      margin-top: -2px;
+      border-radius: 18px;
     }
 
-    .hero-title img,
-    .hero-tagline img{
+    .hero-combined img{
       width: 100%;
       height: 100%;
-      object-fit: cover;       /* << truco: elimina “espacio muerto” sin necesitar canvas */
+      object-fit: contain;   /* como es PNG con transparencia, esto suele ser lo más fiel */
       display:block;
-    }
-    .hero-title img{
-      object-position: center var(--title-crop-y);
       filter:
-        drop-shadow(0 14px 34px rgba(0,0,0,.62))
-        drop-shadow(0 0 30px rgba(255,43,214,.28))
-        drop-shadow(0 0 22px rgba(34,211,238,.16));
-    }
-    .hero-tagline img{
-      object-position: center var(--tagline-crop-y);
-      opacity:.96;
-      filter:
-        drop-shadow(0 12px 26px rgba(0,0,0,.58))
-        drop-shadow(0 0 16px rgba(34,211,238,.12));
+        drop-shadow(0 14px 28px rgba(0,0,0,.62))
+        drop-shadow(0 0 22px rgba(255,43,214,.22))
+        drop-shadow(0 0 16px rgba(34,211,238,.14));
     }
 
-    /* Ajuste móvil: igualar el ‘look’ del hero al desktop (menos alto + sombras más suaves) */
     @media (max-width: 520px){
-      :root{
-        --title-crop-y: 52%;
-        --tagline-crop-y: 56%;
-      }
       header.hero{ padding: 6px 12px 4px; }
-      .hero-inner{ padding: 14px 12px 12px; border-radius: 24px; }
-      .hero-content{ gap: 8px; }
-      .hero-title{ width: min(920px, 100%); height: clamp(112px, 30vw, 148px); }
-      .hero-tagline{ width: min(860px, 100%); height: clamp(64px, 18vw, 90px); margin-top: -6px; }
-      .hero-title img{
+      .hero-inner{ border-radius: 24px; }
+      .hero-combined{ height: clamp(200px, 58vw, 300px); }
+      .hero-combined img{
         filter:
-          drop-shadow(0 10px 20px rgba(0,0,0,.62))
-          drop-shadow(0 0 18px rgba(255,43,214,.22))
+          drop-shadow(0 10px 18px rgba(0,0,0,.60))
+          drop-shadow(0 0 16px rgba(255,43,214,.18))
           drop-shadow(0 0 12px rgba(34,211,238,.12));
-      }
-      .hero-tagline img{
-        opacity: 1;
-        filter:
-          drop-shadow(0 8px 16px rgba(0,0,0,.55))
-          drop-shadow(0 0 10px rgba(34,211,238,.10));
       }
     }
 
     .accordion{
       display:grid;
       gap: 14px;
-      margin-top: 10px; /* << pegado al hero */
+      margin-top: 10px;
     }
 
     details.panel{
@@ -309,10 +260,14 @@
     }
     summary::-webkit-details-marker{display:none}
 
+    /* Evita que títulos largos revienten en móvil */
     .sum-title{
       font-weight: 900;
       letter-spacing: .03em;
       font-size: clamp(18px, 2.2vw, 22px);
+      min-width: 0;
+      flex: 1 1 auto;
+      overflow-wrap: anywhere;
     }
     .sum-title .kicker{
       color: rgba(34,211,238,.95);
@@ -346,7 +301,6 @@
       border-radius: 16px;
     }
 
-    /* Contenido con acordeón controlado por JS (robusto en iPhone/WebViews) */
     .panel__content{
       padding: 0 18px;
       color: rgba(238,242,255,.96);
@@ -381,7 +335,6 @@
       letter-spacing:.02em;
     }
 
-    /* FAQ: pregunta un poco más grande, pero menor que título de sección */
     .faq h4{
       font-size: 18px;
       font-weight: 900;
@@ -448,20 +401,9 @@
 
   <header class="hero" role="banner" aria-label="Cabecera GITSTER">
     <div class="hero-inner">
-      <div class="hero-content">
-        <h1 aria-label="GITSTER" style="margin:0; width:100%;">
-          <span class="sr-only">GITSTER</span>
-          <div class="hero-title" aria-hidden="true">
-            <img id="titleImg" src="gitster_title.png" alt="GITSTER" />
-          </div>
-        </h1>
-
-        <div aria-label="Subtítulo" style="width:100%;">
-          <span class="sr-only">¡más guay, más genial y con más gambling!</span>
-          <div class="hero-tagline" aria-hidden="true">
-            <img id="taglineImg" src="gitster_tagline.png" alt="¡más guay, más genial y con más gambling!" />
-          </div>
-        </div>
+      <h1 class="sr-only">GITSTER</h1>
+      <div class="hero-combined" aria-label="GITSTER + subtítulo">
+        <img id="heroImg" src="assets/gitster_hero.png" alt="GITSTER — ¡más guay, más genial y con más gambling!" />
       </div>
     </div>
   </header>
@@ -729,7 +671,6 @@
 
   <script>
     (() => {
-      // ====== Acordeón robusto (para iPhone/WebViews que a veces rompen <details>) ======
       const allDetails = Array.from(document.querySelectorAll('details.panel'));
 
       const setExpanded = (d, open) => {
@@ -768,14 +709,17 @@
         sum.addEventListener('keydown', (e) => {
           if (e.key === 'Enter' || e.key === ' ') toggle(e);
         });
+      });
 
-        window.addEventListener('resize', () => {
+      // Un solo resize listener (más limpio)
+      window.addEventListener('resize', () => {
+        allDetails.forEach(d => {
           if (d.classList.contains('is-open')) {
             const content = d.querySelector('.panel__content');
             if (content) content.style.maxHeight = content.scrollHeight + 'px';
           }
-        }, { passive: true });
-      });
+        });
+      }, { passive: true });
 
       // Botón Cheatsheet
       const cheat = document.getElementById('cheatsheet');
@@ -789,10 +733,8 @@
         });
       }
 
-      // Recalcular el alto del panel abierto cuando carguen las imágenes del hero
-      const imgs = [document.getElementById('titleImg'), document.getElementById('taglineImg')].filter(Boolean);
-      let pending = imgs.length;
-
+      // Recalcular paneles abiertos cuando cargue el hero
+      const heroImg = document.getElementById('heroImg');
       const recalcOpenPanels = () => {
         allDetails.forEach(d => {
           if (d.classList.contains('is-open')) {
@@ -802,22 +744,14 @@
         });
       };
 
-      if (pending === 0) return;
-      imgs.forEach(img => {
-        if (img.complete) {
-          pending--;
-          if (pending === 0) recalcOpenPanels();
+      if (heroImg) {
+        if (heroImg.complete) {
+          recalcOpenPanels();
         } else {
-          img.addEventListener('load', () => {
-            pending--;
-            if (pending === 0) recalcOpenPanels();
-          }, { once: true });
-          img.addEventListener('error', () => {
-            pending--;
-            if (pending === 0) recalcOpenPanels();
-          }, { once: true });
+          heroImg.addEventListener('load', recalcOpenPanels, { once: true });
+          heroImg.addEventListener('error', recalcOpenPanels, { once: true });
         }
-      });
+      }
     })();
   </script>
 </body>
