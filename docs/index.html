@@ -8,28 +8,24 @@
   <meta name="theme-color" content="#060814" />
 
   <!--
-    ASSETS (obligatorio)
-    Este index.html vive en: docs/index.html
-    Las imágenes deben estar en: docs/assets/
+    ESTRUCTURA RECOMENDADA (pero el HTML se adapta con fallback):
+      index.html
+      assets/
+        - gitster_bg.png
+        - gitster_hero.png
 
-      - docs/assets/gitster_bg.png    (fondo)
-      - docs/assets/gitster_hero.png  (imagen combinada: título + subtítulo)
-
-    IMPORTANTÍSIMO en GitHub Pages:
-      - Si la fuente de Pages es /docs, la "raíz" del sitio ES docs/.
-      - Por eso en el HTML usamos rutas relativas:  assets/...
-      - No uses /assets/... (eso apunta a la raíz del dominio y suele fallar).
+    Este HTML prueba automáticamente estas rutas (en este orden):
+      ./assets/...
+      ./docs/assets/...
+      ./GITSTER/assets/...
   -->
 
   <style>
   :root{
     --ink: #eaf0ff;
     --muted: rgba(234,240,255,.78);
-    --muter: rgba(234,240,255,.58);
 
     --card: rgba(7,10,26,.62);
-    --card-2: rgba(7,10,26,.42);
-
     --mag: #ff2fb3;
     --mag2: #ff57c7;
     --cyan: #11d6ff;
@@ -42,17 +38,14 @@
     --shadow: 0 14px 40px rgba(0,0,0,.45);
     --shadow2: 0 10px 30px rgba(0,0,0,.35);
 
-    --stroke: rgba(255,255,255,.09);
-    --stroke2: rgba(17,214,255,.25);
-    --strokeMag: rgba(255,47,179,.28);
-
     --maxw: 980px;
 
     --pad: 20px;
-    --padS: 14px;
 
     --titleGlow: 0 0 12px rgba(17,214,255,.45);
-    --magGlow: 0 0 14px rgba(255,47,179,.42);
+
+    /* Se setean por JS (con fallback) */
+    --bg-img: none;
   }
 
   *{box-sizing:border-box}
@@ -64,6 +57,8 @@
     background:#060814;
     overflow-x:hidden;
     line-height:1.45;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
   }
 
   /* Fondo */
@@ -71,11 +66,22 @@
     position:fixed;
     inset:0;
     z-index:-2;
-    background:
+    background-image:
       radial-gradient(1200px 600px at 70% 0%, rgba(255,47,179,.22), transparent 60%),
       radial-gradient(900px 520px at 25% 15%, rgba(17,214,255,.18), transparent 55%),
       radial-gradient(1000px 680px at 50% 100%, rgba(122,76,255,.12), transparent 55%),
-      url("assets/gitster_bg.png") center/cover no-repeat;
+      var(--bg-img);
+    background-position:
+      70% 0%,
+      25% 15%,
+      50% 100%,
+      center;
+    background-size:
+      auto,
+      auto,
+      auto,
+      cover;
+    background-repeat: no-repeat;
     filter:saturate(1.05) contrast(1.05);
   }
   .bg::after{
@@ -95,17 +101,17 @@
   .wrap{
     width:min(var(--maxw), 100%);
     margin:0 auto;
-    padding: 0 var(--pad) 60px;
+    padding: 0 var(--pad) 70px;
   }
 
   /* HERO */
   .hero{
-    padding: 36px 18px 18px;
+    padding: 36px 18px 12px;
   }
   .hero-inner{
     width:min(var(--maxw), 100%);
     margin: 0 auto;
-    padding: 22px 22px 22px;
+    padding: 22px;
     border-radius: 34px;
     background: linear-gradient(180deg, rgba(11,14,34,.72), rgba(11,14,34,.45));
     border: 1px solid rgba(255,255,255,.10);
@@ -133,10 +139,6 @@
     align-items:center;
     text-align:center;
   }
-
-  /* ============================
-     HERO (imagen combinada)
-     ============================ */
   .hero-image{
     width: min(980px, 100%);
     height: auto;
@@ -146,16 +148,54 @@
     object-fit: contain;
     transform: translateZ(0);
   }
-  @media (max-width: 520px){
-    .hero-inner{ padding: 18px 16px 18px; }
-    .hero-image{ max-height: 40vh; }
+
+  .hero-fallback{
+    display:none;
+    padding: 18px 16px;
+    text-align:left;
+    color: rgba(234,240,255,.92);
   }
+  .hero-fallback h1{
+    margin:0 0 10px;
+    font-size: 34px;
+    letter-spacing:.02em;
+  }
+  .hero-fallback p{
+    margin:0;
+    font-size: 18px;
+    opacity:.9;
+  }
+
+  /* CTA grande debajo del HERO */
+  .hero-cta{
+    width:min(var(--maxw), 100%);
+    margin: 0 auto 12px;
+    padding: 0 18px;
+  }
+  .cta-btn{
+    width: 100%;
+    border: 1px solid rgba(255,255,255,.16);
+    background: rgba(122,76,255,.22);
+    color: rgba(234,240,255,.96);
+    font-weight: 900;
+    letter-spacing:.01em;
+    font-size: 22px;
+    padding: 16px 18px;
+    border-radius: 18px;
+    box-shadow: 0 18px 40px rgba(0,0,0,.38), 0 0 0 1px rgba(255,47,179,.12) inset;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    cursor: pointer;
+    transition: transform .18s ease, background .18s ease;
+  }
+  .cta-btn:hover{ transform: translateY(-1px); background: rgba(122,76,255,.28); }
+  .cta-btn:active{ transform: translateY(0px) scale(.99); }
 
   /* Panels */
   .main{
     width:min(var(--maxw), 100%);
     margin: 0 auto;
-    padding-bottom: 80px;
+    padding-bottom: 90px;
   }
 
   details.panel{
@@ -167,7 +207,6 @@
     position:relative;
     overflow:hidden;
   }
-
   details.panel::before{
     content:"";
     position:absolute;
@@ -207,14 +246,6 @@
     text-shadow: var(--titleGlow);
   }
 
-  .panel__subtitle{
-    font-weight: 700;
-    color: rgba(234,240,255,.85);
-    font-size: 16px;
-    margin-top: 10px;
-    line-height:1.35;
-  }
-
   .panel__head{
     display:flex;
     flex-direction:column;
@@ -239,11 +270,6 @@
     background: rgba(0,0,0,.26);
   }
 
-  .panel__content{
-    padding: 0 22px 22px;
-    color: rgba(234,240,255,.92);
-  }
-
   .panel__divider{
     height: 1px;
     background: linear-gradient(90deg, rgba(17,214,255,.0), rgba(17,214,255,.22), rgba(255,47,179,.18), rgba(255,47,179,.0));
@@ -251,12 +277,22 @@
     opacity:.85;
   }
 
-  /* Texto */
-  p{margin: 10px 0}
-  ul{margin: 10px 0 0; padding-left: 18px}
-  li{margin: 0 0 10px}
+  .panel__content{
+    padding: 0 22px 22px;
+    color: rgba(234,240,255,.92);
+    font-size: clamp(16px, 1.0vw + 12px, 18px);
+    line-height: 1.65;
+    letter-spacing: 0.01em;
+    overflow-wrap: break-word;
+    word-break: normal;
+    hyphens: auto;
+    text-wrap: pretty;
+  }
+
+  p{margin: 12px 0}
+  ul{margin: 12px 0 6px; padding-left: 24px}
+  li{margin: 0 0 12px}
   strong{font-weight: 900; color: rgba(255,255,255,.96)}
-  em{font-style: italic; color: rgba(234,240,255,.9)}
 
   /* Callouts */
   .callout{
@@ -282,11 +318,11 @@
   .callout.cyan .k{color: var(--cyan2)}
   .callout .t{color: rgba(234,240,255,.94); line-height:1.55}
 
-  /* Botón flotante Cheatsheet */
+  /* Botón flotante */
   .fab{
     position: fixed;
     z-index: 50;
-    bottom: 14px;
+    bottom: calc(14px + env(safe-area-inset-bottom));
     right: 14px;
     padding: 16px 22px;
     border-radius: 999px;
@@ -299,64 +335,26 @@
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
     cursor: pointer;
-    transition: transform .2s ease, background .2s ease, opacity .2s ease;
+    transition: transform .2s ease, background .2s ease;
   }
   .fab:hover{transform: translateY(-1px); background: rgba(122,76,255,.30)}
   .fab:active{transform: translateY(0px) scale(.98)}
-  .fab[hidden]{display:none}
 
   /* Mobile tweaks */
   @media (max-width: 520px){
-    .wrap{padding: 0 14px 60px}
+    .wrap{padding: 0 14px 70px}
+    .hero{padding: 30px 14px 10px}
+    .hero-inner{ padding: 18px 16px; }
+    .hero-image{ max-height: 40vh; }
+    .hero-cta{ padding: 0 14px; }
+    .cta-btn{ font-size: 20px; padding: 15px 16px; border-radius: 16px; }
+
     summary.panel__summary{padding: 18px 18px}
     .panel__title{font-size: 26px}
     .panel__content{padding: 0 18px 18px}
     .panel__divider{margin: 0 18px 12px}
     .fab{padding: 14px 20px; font-size: 20px}
   }
-
-  /* ============================
-     LEGIBILIDAD EN MÓVIL
-     (mínimos cambios de contenido)
-     ============================ */
-  :root{
-    -webkit-text-size-adjust: 100%;
-    text-size-adjust: 100%;
-  }
-
-  .panel__content{
-    font-size: clamp(16px, 1.0vw + 12px, 18px);
-    line-height: 1.65;
-    letter-spacing: 0.01em;
-    overflow-wrap: break-word;
-    word-break: normal;
-    hyphens: auto;
-  }
-
-  .panel__content p{
-    margin: 12px 0;
-  }
-
-  .panel__content ul{
-    padding-left: 24px;
-    margin: 12px 0 6px;
-  }
-
-  .panel__content li{
-    margin: 0 0 12px;
-  }
-
-  /* Evita que el botón flotante tape texto en móviles con "safe area" (iPhone) */
-  .fab{
-    bottom: calc(14px + env(safe-area-inset-bottom));
-    right: 14px;
-  }
-
-  /* Pequeño extra: que los emojis no queden "huérfanos" en una línea aparte */
-  .panel__content, .panel__summary{
-    text-wrap: pretty;
-  }
-
   </style>
 </head>
 
@@ -366,44 +364,31 @@
 
   <div class="wrap">
     <header class="hero" role="banner" aria-label="Cabecera GITSTER">
-    <div class="hero-inner">
-      <div class="hero-content">
-        <img class="hero-image" src="assets/gitster_hero.png" width="1536" height="1024"
-             alt="GITSTER — ¡más guay, más genial y con más gambling!"
-             loading="eager" decoding="async" />
+      <div class="hero-inner">
+        <div class="hero-content">
+          <img class="hero-image" id="heroImg"
+               alt="GITSTER — ¡más guay, más genial y con más gambling!"
+               loading="eager" decoding="async" />
+          <div class="hero-fallback" id="heroFallback" aria-live="polite">
+            <h1>GITSTER</h1>
+            <p>¡más guay, más genial y con más gambling!</p>
+            <p style="opacity:.8; margin-top:10px;">(No se encontró <strong>gitster_hero.png</strong> en <strong>assets/</strong>. Revisa que exista y que el nombre sea exacto.)</p>
+          </div>
+        </div>
       </div>
+    </header>
+
+    <!-- BOTÓN GRANDE JUSTO DEBAJO DEL HERO -->
+    <div class="hero-cta">
+      <button class="cta-btn" id="btnCheatsheetTop" type="button">Ir a Cheatsheet 🧠</button>
     </div>
-  </header>
 
     <main class="main">
-
-      <!-- CHEATSHEET -->
-      <details id="cheatsheet" class="panel" open>
-        <summary class="panel__summary">
-          <div class="panel__head">
-            <div class="panel__title">CHEATSHEET 🧠</div>
-          </div>
-          <div class="panel__chev" aria-hidden="true">▲</div>
-        </summary>
-        <div class="panel__divider"></div>
-        <div class="panel__content">
-          <ul>
-            <li>Empieza el de la canción más antigua y el Marcador de Prioridad de Apuestas empieza a su derecha ▶️</li>
-            <li>Fichas iniciales: <strong>3</strong> 💰💰💰</li>
-            <li>Límite de fichas: <strong>10</strong> ⚠️</li>
-            <li>La canción se puede escuchar hasta el estribillo (incluido) ⏳</li>
-            <li>Re-roll: cuesta <strong>1 ficha</strong> y se puede hacer sólo una vez por turno 🎲</li>
-            <li>Coste de comprar cartas: <strong>5</strong>, <strong>6</strong>, <strong>7</strong>, etc. 💸</li>
-          </ul>
-        </div>
-      </details>
 
       <!-- ¿QUÉ ES ESTO? -->
       <details class="panel">
         <summary class="panel__summary">
-          <div class="panel__head">
-            <div class="panel__title">¿QUÉ ES ESTO? 🪩</div>
-          </div>
+          <div class="panel__head"><div class="panel__title">¿QUÉ ES ESTO? 🪩</div></div>
           <div class="panel__chev" aria-hidden="true">▲</div>
         </summary>
         <div class="panel__divider"></div>
@@ -415,9 +400,7 @@
       <!-- ¿QUÉ SE NECESITA PARA JUGAR? -->
       <details class="panel">
         <summary class="panel__summary">
-          <div class="panel__head">
-            <div class="panel__title">¿QUÉ SE NECESITA PARA JUGAR? 🧩</div>
-          </div>
+          <div class="panel__head"><div class="panel__title">¿QUÉ SE NECESITA PARA JUGAR? 🧩</div></div>
           <div class="panel__chev" aria-hidden="true">▲</div>
         </summary>
         <div class="panel__divider"></div>
@@ -433,9 +416,7 @@
       <!-- 1) OBJETIVO -->
       <details class="panel">
         <summary class="panel__summary">
-          <div class="panel__head">
-            <div class="panel__title">1) OBJETIVO 🎯</div>
-          </div>
+          <div class="panel__head"><div class="panel__title">1) OBJETIVO 🎯</div></div>
           <div class="panel__chev" aria-hidden="true">▲</div>
         </summary>
         <div class="panel__divider"></div>
@@ -449,9 +430,7 @@
       <!-- 2) PREPARACIÓN -->
       <details class="panel">
         <summary class="panel__summary">
-          <div class="panel__head">
-            <div class="panel__title">2) PREPARACIÓN ✅</div>
-          </div>
+          <div class="panel__head"><div class="panel__title">2) PREPARACIÓN ✅</div></div>
           <div class="panel__chev" aria-hidden="true">▲</div>
         </summary>
         <div class="panel__divider"></div>
@@ -481,9 +460,7 @@
       <!-- 3) TURNO DEL DJ -->
       <details class="panel">
         <summary class="panel__summary">
-          <div class="panel__head">
-            <div class="panel__title">3) TURNO DEL DJ 🎧</div>
-          </div>
+          <div class="panel__head"><div class="panel__title">3) TURNO DEL DJ 🎧</div></div>
           <div class="panel__chev" aria-hidden="true">▲</div>
         </summary>
         <div class="panel__divider"></div>
@@ -516,9 +493,7 @@
       <!-- 4) RONDA DE APUESTAS -->
       <details class="panel">
         <summary class="panel__summary">
-          <div class="panel__head">
-            <div class="panel__title">4) RONDA DE APUESTAS 🎰</div>
-          </div>
+          <div class="panel__head"><div class="panel__title">4) RONDA DE APUESTAS 🎰</div></div>
           <div class="panel__chev" aria-hidden="true">▲</div>
         </summary>
         <div class="panel__divider"></div>
@@ -551,9 +526,7 @@
       <!-- 5) RESOLUCIÓN -->
       <details class="panel">
         <summary class="panel__summary">
-          <div class="panel__head">
-            <div class="panel__title">5) RESOLUCIÓN DEL TURNO Y PAGOS DE APUESTAS 💵</div>
-          </div>
+          <div class="panel__head"><div class="panel__title">5) RESOLUCIÓN DEL TURNO Y PAGOS DE APUESTAS 💵</div></div>
           <div class="panel__chev" aria-hidden="true">▲</div>
         </summary>
         <div class="panel__divider"></div>
@@ -578,148 +551,4 @@
             <li>Si has pasado (no has apostado), eres un cagao y te quedas igual 💩</li>
           </ul>
 
-          <p style="font-weight:900; text-transform:uppercase; letter-spacing:.02em; font-size: 26px; text-align:center; margin-top:16px; background: linear-gradient(90deg, var(--mag), var(--cyan)); -webkit-background-clip:text; background-clip:text; color:transparent;">
-            ¡RECORDAD EL LÍMITE MÁXIMO DE 10 FICHAS!
-          </p>
-        </div>
-      </details>
-
-      <!-- 6) FIN DE LA PARTIDA -->
-      <details class="panel">
-        <summary class="panel__summary">
-          <div class="panel__head">
-            <div class="panel__title">6) FIN DE LA PARTIDA 🏁</div>
-          </div>
-          <div class="panel__chev" aria-hidden="true">▲</div>
-        </summary>
-        <div class="panel__divider"></div>
-        <div class="panel__content">
-          <p>Cuando alguien llegue a <strong>15</strong> cartas en su Timeline <strong>NO</strong> se acaba la partida 🤷‍♂️</p>
-          <p>Se termina al <strong>final de la ronda completa</strong> (para que todos tengan el mismo número de turnos) ↩️</p>
-
-          <div class="callout">
-            <span class="k">EMPATE</span>
-            <div class="t">Gana quien tenga más fichas 💰💰💰💰💰💰💰💰💰💰</div>
-          </div>
-
-          <div class="callout cyan">
-            <span class="k">EMPATE A FICHAS</span>
-            <div class="t">Si sigue el empate: <strong>MUERTE SÚBITA</strong> ☠️<br><br>
-              Los empatados juegan 1 turno cada uno (en el orden normal) y gana el primero que consiga <strong>+1 carta</strong> (<strong>SIN COMPRAR</strong>). Si ambos la consiguen en la misma ronda: gana quien termine con más fichas.
-            </div>
-          </div>
-        </div>
-      </details>
-
-      <!-- FUCK -->
-      <details class="panel">
-        <summary class="panel__summary">
-          <div class="panel__head">
-            <div class="panel__title">FUCK (Frequent Usked CKuestions)</div>
-          </div>
-          <div class="panel__chev" aria-hidden="true">▲</div>
-        </summary>
-        <div class="panel__divider"></div>
-        <div class="panel__content">
-          <p style="opacity:.75">Vacío por ahora. (Pero ya lo rellenaremos 😈)</p>
-        </div>
-      </details>
-
-    </main>
-  </div>
-
-  <button class="fab" id="fabCheatsheet" type="button" aria-label="Ir a Cheatsheet">Cheatsheet</button>
-
-  <script>
-    (() => {
-      const allDetails = Array.from(document.querySelectorAll('details.panel'));
-
-      // --- Fix "emoji huérfano": evita que el emoji se quede solo en la siguiente línea ---
-      const supportsUnicodeProps = (() => {
-        try { new RegExp('\\p{Extended_Pictographic}', 'u'); return true; } catch (_) { return false; }
-      })();
-
-      const RE_EMOJI_SPACE = supportsUnicodeProps
-        ? /(\s)(\p{Extended_Pictographic})/gu
-        : /(\s)([\u2600-\u27BF]|[\uD83C-\uDBFF][\uDC00-\uDFFF])/g;
-
-      const fixEmojiOrphans = (root) => {
-        if (!root) return;
-        const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
-          acceptNode(node){
-            if (!node.nodeValue) return NodeFilter.FILTER_REJECT;
-            // Ignora nodos sólo con espacios
-            return /\S/.test(node.nodeValue) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
-          }
-        });
-        const nodes = [];
-        while (walker.nextNode()) nodes.push(walker.currentNode);
-        for (const node of nodes){
-          const s = node.nodeValue;
-          const t = s.replace(RE_EMOJI_SPACE, '\u00A0$2');
-          if (t !== s) node.nodeValue = t;
-        }
-      };
-
-      // Sincroniza altura/animación del panel cuando se abre/cierra
-      const syncPanel = (details) => {
-        const content = details.querySelector('.panel__content');
-        if (!content) return;
-        content.style.willChange = 'max-height';
-        if (details.open) {
-          content.style.maxHeight = content.scrollHeight + 'px';
-        } else {
-          content.style.maxHeight = '0px';
-        }
-      };
-
-      // Al cargar: asegura que los abiertos tengan altura correcta
-      allDetails.forEach(d => {
-        const content = d.querySelector('.panel__content');
-        if (content) {
-          content.style.overflow = 'hidden';
-          content.style.transition = 'max-height .28s ease';
-          // Inicial
-          content.style.maxHeight = d.open ? (content.scrollHeight + 'px') : '0px';
-        }
-
-        d.addEventListener('toggle', () => {
-          syncPanel(d);
-        });
-      });
-
-      // Ajuste de legibilidad: evita emojis huérfanos en salto de línea
-      fixEmojiOrphans(document.querySelector('main') || document.body);
-
-      // Botón Cheatsheet
-      const fab = document.getElementById('fabCheatsheet');
-      const cheatsheet = document.getElementById('cheatsheet');
-      if (fab && cheatsheet) {
-        fab.addEventListener('click', () => {
-          if (!cheatsheet.open) cheatsheet.open = true;
-          setTimeout(() => {
-            cheatsheet.scrollIntoView({behavior:'smooth', block:'start'});
-          }, 60);
-        });
-      }
-
-      // Recalcular alturas al cargar imágenes (por si cambian el layout)
-      const imgs = Array.from(document.querySelectorAll('.hero-image')).filter(Boolean);
-      let pending = imgs.length;
-      const recalcAllOpen = () => {
-        allDetails.filter(d => d.open).forEach(syncPanel);
-      };
-      const done = () => {
-        pending--;
-        if (pending <= 0) recalcAllOpen();
-      };
-      imgs.forEach(img => {
-        if (img.complete) return done();
-        img.addEventListener('load', done, {once:true});
-        img.addEventListener('error', done, {once:true});
-      });
-      if (pending===0) return;
-    })();
-  </script>
-</body>
-</html>
+          <p style="font-weight:900; text-transform:uppercase
