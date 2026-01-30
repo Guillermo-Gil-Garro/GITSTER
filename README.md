@@ -11,7 +11,7 @@
 
 - Un **juego de mesa** inspirado en el “coloca la canción en su año” con un toque extra de **gambling** 🎰  
 - Un proyecto **Data + Design**:
-  - **Pipeline**: playlists de :contentReference[oaicite:0]{index=0} → dataset → mazo (cartas)
+  - **Pipeline**: playlists de Spotify → dataset → mazo (cartas)
   - **Diseño**: cartas imprimibles con estética club/neón
   - **App** (más adelante): soporte para escaneo/reproducción y gestión de mazos
 
