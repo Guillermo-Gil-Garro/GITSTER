@@ -8,15 +8,15 @@
   <meta name="theme-color" content="#060814" />
 
   <!--
-    ASSETS
-    Crea una carpeta "assets" al mismo nivel que este index.html y mete dentro:
-      - assets/gitster_bg.png
-      - assets/gitster_hero.png   (imagen combinada: título + subtítulo)
+    docs/assets
+    Crea una carpeta "docs/assets" al mismo nivel que este index.html y mete dentro:
+      - docs/assets/gitster_bg.png
+      - docs/assets/gitster_hero.png   (imagen combinada: título + subtítulo)
   -->
 
   <!-- Preload (menos parpadeo / más rápido) -->
-  <link rel="preload" as="image" href="assets/gitster_bg.png" />
-  <link rel="preload" as="image" href="assets/gitster_hero.png" />
+  <link rel="preload" as="image" href="docs/assets/gitster_bg.png" />
+  <link rel="preload" as="image" href="docs/assets/gitster_hero.png" />
 
   <style>
     :root{
@@ -51,7 +51,7 @@
       overflow-x:hidden;
     }
 
-    /* Fondo (assets/gitster_bg.png) */
+    /* Fondo (docs/assets/gitster_bg.png) */
     .bg{
       position:fixed;
       inset:0;
@@ -60,7 +60,7 @@
         radial-gradient(1200px 700px at 50% 10%, rgba(124,58,237,.18), transparent 60%),
         radial-gradient(900px 700px at 70% 55%, rgba(255,43,214,.10), transparent 62%),
         radial-gradient(900px 700px at 25% 75%, rgba(34,211,238,.09), transparent 62%),
-        url("assets/gitster_bg.png");
+        url("docs/assets/gitster_bg.png");
       background-size: auto, auto, auto, cover;
       background-position: center, center, center, center;
       background-repeat:no-repeat;
@@ -403,7 +403,7 @@
     <div class="hero-inner">
       <h1 class="sr-only">GITSTER</h1>
       <div class="hero-combined" aria-label="GITSTER + subtítulo">
-        <img id="heroImg" src="assets/gitster_hero.png" alt="GITSTER — ¡más guay, más genial y con más gambling!" />
+        <img id="heroImg" src="docs/assets/gitster_hero.png" alt="GITSTER — ¡más guay, más genial y con más gambling!" />
       </div>
     </div>
   </header>
