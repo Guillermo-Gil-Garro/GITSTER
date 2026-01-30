@@ -1,4 +1,4 @@
-# 🎧🪩🎰 GITSTER
+# GITSTER 🎧🪩🎰
 
 **GITSTER** es un juego tipo *timeline musical* con **economía de fichas y apuestas**: colocas canciones en orden cronológico, negocias riesgos, y ganas si consigues completar tu timeline antes que el resto.
 
