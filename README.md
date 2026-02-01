@@ -65,5 +65,4 @@ Este repo tiene 2 cosas:
 ---
 
 ## 📬 CONTACTO
-Si eres colega y quieres meter tus playlists en el mazo: escríbeme y te digo el formato/flujo (sin subir datos sensibles al repo)
-Si no tienes ni pipa de manejar esto, pero te gustaría tener tu propia baraja de Gitster (tus canciones y las de tus amigos), escríbeme igualmente y según esté de curro lo hacemos
+Si eres colega y quieres meter tus playlists en el mazo: escríbeme y te digo el formato/flujo (sin subir datos sensibles al repo)<br>Si no tienes ni pipa de manejar esto, pero te gustaría tener tu propia baraja de Gitster (tus canciones y las de tus amigos), escríbeme igualmente y según esté de curro lo hacemos
