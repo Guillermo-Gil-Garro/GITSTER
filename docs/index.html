@@ -1,0 +1,826 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>GITSTER</title>
+  <meta name="color-scheme" content="dark" />
+  <meta name="theme-color" content="#060814" />
+
+  <!--
+    ASSETS (obligatorio)
+    Dentro de `docs/assets/` (al mismo nivel que este `index.html`) pon:
+      - gitster_bg.png    (fondo)
+      - gitster_hero.png  (hero: título + subtítulo)
+
+    Nota: si el móvil te cachea la imagen antigua, cambia el `?v=1` a `?v=2` en este HTML.
+  -->
+
+  <style>
+    :root{
+      --bg0:#060814;
+      --bg1:#070b1c;
+
+      --ink:#eef2ff;
+      --muted:#b8c0e6;
+
+      --cyan:#22d3ee;
+      --mag:#ff2bd6;
+
+      --panel:#0a0f26cc;
+      --panel2:#0a102ad9;
+
+      --radius2:22px;
+      --shadow: 0 18px 40px rgba(0,0,0,.55);
+      --glowC: 0 0 18px rgba(34,211,238,.35), 0 0 42px rgba(34,211,238,.18);
+      --glowM: 0 0 18px rgba(255,43,214,.35), 0 0 42px rgba(255,43,214,.18);
+
+      --max: 980px;
+}
+
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    html{scroll-behavior:smooth}
+    body{
+      margin:0;
+      color:var(--ink);
+      font: 16px/1.45 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
+      background: linear-gradient(180deg, var(--bg0), var(--bg1) 45%, #040612 100%);
+      overflow-x:hidden;
+    }
+
+    /* Fondo (Imagen A) */
+    .bg{
+      position:fixed;
+      inset:0;
+      z-index:-3;
+      background:
+        radial-gradient(1200px 700px at 50% 10%, rgba(124,58,237,.18), transparent 60%),
+        radial-gradient(900px 700px at 70% 55%, rgba(255,43,214,.10), transparent 62%),
+        radial-gradient(900px 700px at 25% 75%, rgba(34,211,238,.09), transparent 62%),
+        url("assets/gitster_bg.png?v=1");
+      background-size: auto, auto, auto, cover;
+      background-position: center, center, center, center;
+      background-repeat:no-repeat;
+      filter: saturate(1.05) contrast(1.02);
+      transform: translateZ(0);
+    }
+    .bg::before{
+      content:"";
+      position:absolute;
+      inset:0;
+      pointer-events:none;
+      background: linear-gradient(180deg, rgba(2,4,14,.70), rgba(2,4,14,.26) 42%, rgba(2,4,14,.78) 100%);
+    }
+    .bg::after{
+      content:"";
+      position:absolute;
+      inset:0;
+      pointer-events:none;
+      opacity:.14;
+      background-image:
+        linear-gradient(to right, rgba(255,255,255,.08) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(255,255,255,.08) 1px, transparent 1px);
+      background-size: 64px 64px;
+      mask-image: radial-gradient(900px 600px at 50% 25%, rgba(0,0,0,1), rgba(0,0,0,.35) 55%, rgba(0,0,0,.08) 85%, transparent 100%);
+    }
+
+    .scanlines{
+      position:fixed;
+      inset:0;
+      z-index:-2;
+      pointer-events:none;
+      opacity:.07;
+      background: repeating-linear-gradient(
+        to bottom,
+        rgba(255,255,255,.10) 0px,
+        rgba(255,255,255,.10) 1px,
+        transparent 2px,
+        transparent 6px
+      );
+      mix-blend-mode: overlay;
+    }
+
+    .skip{
+      position:absolute; left:-9999px; top:auto; width:1px; height:1px; overflow:hidden;
+    }
+    .skip:focus{
+      left:12px; top:12px; width:auto; height:auto; padding:10px 12px;
+      z-index:9999;
+      border-radius:12px;
+      background:#0b122b;
+      border:1px solid rgba(34,211,238,.45);
+      box-shadow:var(--glowC);
+      color:var(--ink);
+      text-decoration:none;
+    }
+    .sr-only{
+      position:absolute !important;
+      width:1px; height:1px;
+      padding:0; margin:-1px;
+      overflow:hidden; clip:rect(0,0,0,0);
+      white-space:nowrap; border:0;
+    }
+
+    .top-bars{
+      position:sticky;
+      top:0;
+      z-index:20;
+      height:14px;
+      background: linear-gradient(90deg, transparent, rgba(255,43,214,.9), rgba(255,43,214,.95), rgba(255,43,214,.9), transparent);
+      filter: drop-shadow(0 6px 18px rgba(255,43,214,.25));
+    }
+    .top-bars::after{
+      content:"";
+      position:absolute;
+      left:0; right:0; bottom:-4px;
+      height:6px;
+      background: linear-gradient(90deg, transparent, rgba(34,211,238,.85), rgba(34,211,238,.95), rgba(34,211,238,.85), transparent);
+      filter: drop-shadow(0 6px 16px rgba(34,211,238,.18));
+    }
+
+    .wrap{
+      max-width: var(--max);
+      margin: 0 auto;
+      padding: 6px 16px 90px; /* << más compacto, pega el contenido al hero */
+    }
+
+        /* HERO (imagen combinada: título + subtítulo) */
+    .hero{
+      padding: 22px 0 12px;
+    }
+    .hero-inner{
+      width:min(var(--max), calc(100% - 28px));
+      margin:0 auto;
+      background: linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.03));
+      border:1px solid rgba(255,255,255,.10);
+      border-radius: 28px;
+      box-shadow: 0 24px 90px rgba(0,0,0,.55);
+      padding: clamp(14px, 3.2vw, 24px);
+      text-align:center;
+    }
+    .hero-img{
+      width: min(860px, 100%);
+      height: auto;
+      display:block;
+      margin: 0 auto;
+      filter: drop-shadow(0 18px 34px rgba(0,0,0,.55));
+    }
+
+    /* CTA grande a CHEATSHEET */
+    .top-cta{
+      width:min(var(--max), calc(100% - 28px));
+      margin: 10px auto 18px;
+    }
+    .cheat-cta{
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      gap:12px;
+      width:100%;
+      padding: 16px 18px;
+      border-radius: 18px;
+      text-decoration:none;
+      font-weight: 900;
+      font-size: clamp(20px, 5.5vw, 34px);
+      letter-spacing:.2px;
+      color: rgba(255,255,255,.92);
+      background: linear-gradient(90deg, rgba(200,90,255,.26), rgba(90,210,255,.20));
+      border: 1px solid rgba(255,255,255,.12);
+      box-shadow: 0 16px 40px rgba(0,0,0,.45);
+      -webkit-tap-highlight-color: transparent;
+    }
+    .cheat-cta:active{transform: translateY(1px)}
+    .cheat-cta:focus-visible{outline:3px solid rgba(90,210,255,.55); outline-offset:3px}
+
+
+    .accordion{
+      display:grid;
+      gap: 14px;
+      margin-top: 10px; /* << pegado al hero */
+    }
+
+    details.panel{
+      border-radius: var(--radius2);
+      background: var(--panel);
+      border: 1px solid rgba(255,255,255,.06);
+      box-shadow: var(--shadow);
+      overflow:hidden;
+      position:relative;
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+    }
+
+    details.panel::before{ content:none; }
+    @supports ((-webkit-mask-composite: xor) or (mask-composite: exclude)) {
+      details.panel::before{
+        content:"";
+        position:absolute;
+        inset:0;
+        pointer-events:none;
+        border-radius: inherit;
+        padding: 1px;
+        background: linear-gradient(90deg, rgba(255,43,214,.75), rgba(34,211,238,.65));
+        -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+        -webkit-mask-composite: xor;
+        mask-composite: exclude;
+        opacity:.65;
+      }
+    }
+
+    details.panel.featured{
+      box-shadow: var(--shadow), var(--glowM), var(--glowC);
+      background: var(--panel2);
+    }
+    @supports ((-webkit-mask-composite: xor) or (mask-composite: exclude)) {
+      details.panel.featured::before{
+        opacity:.95;
+        background: linear-gradient(90deg, rgba(255,43,214,.95), rgba(34,211,238,.85));
+      }
+    }
+
+    summary{
+      list-style:none;
+      cursor:pointer;
+      padding: 18px 18px;
+      user-select:none;
+      display:flex;
+      align-items:center;
+      gap:12px;
+      position:relative;
+      outline:none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    summary::-webkit-details-marker{display:none}
+
+    .sum-title{
+      font-weight: 900;
+      letter-spacing: .03em;
+      font-size: clamp(18px, 2.2vw, 22px);
+    }
+    .sum-title .kicker{
+      color: rgba(34,211,238,.95);
+      text-shadow: 0 0 12px rgba(34,211,238,.22);
+    }
+    details.featured .sum-title .kicker{
+      color: rgba(255,43,214,.95);
+      text-shadow: 0 0 14px rgba(255,43,214,.22);
+    }
+
+    .caret{
+      margin-left:auto;
+      width: 40px;
+      height: 40px;
+      border-radius: 999px;
+      display:grid;
+      place-items:center;
+      background: rgba(255,255,255,.04);
+      border: 1px solid rgba(255,255,255,.06);
+      box-shadow: inset 0 0 0 1px rgba(34,211,238,.10);
+      transition: transform .25s ease, box-shadow .25s ease;
+      flex: 0 0 auto;
+    }
+    details.is-open .caret{
+      transform: rotate(180deg);
+      box-shadow: inset 0 0 0 1px rgba(255,43,214,.18), 0 0 18px rgba(34,211,238,.18);
+    }
+
+    summary:focus-visible{
+      box-shadow: 0 0 0 3px rgba(34,211,238,.35), 0 0 0 1px rgba(34,211,238,.55) inset;
+      border-radius: 16px;
+    }
+
+    /* Contenido con acordeón controlado por JS (robusto en iPhone/WebViews) */
+    .panel__content{
+      padding: 0 18px;
+      color: rgba(238,242,255,.96);
+      overflow:hidden;
+      max-height: 0px;
+      transition: max-height .28s ease;
+    }
+    details.is-open .panel__content{
+      padding-bottom: 18px;
+    }
+
+    .panel__content p{margin: 10px 0}
+    .panel__content ul{margin: 10px 0 0; padding-left: 20px}
+    .panel__content li{margin: 6px 0}
+    .panel__content strong{color: #ffffff}
+
+    .lead{color: rgba(238,242,255,.94); margin-top: 8px;}
+    .mono{font-variant-numeric: tabular-nums}
+    .muted{color: var(--muted)}
+
+    /* Badges tipo píldora (para etiquetas como EMPATE, LÍMITE, etc.) */
+    .tag{
+      display:inline-flex;
+      align-items:center;
+      gap:6px;
+      padding: 2px 10px;
+      border-radius: 999px;
+      font-weight: 900;
+      letter-spacing: .03em;
+      text-transform: uppercase;
+      font-size: 12px;
+      line-height: 1.6;
+      color: rgba(255,255,255,.92);
+      background: rgba(255,255,255,.06);
+      border: 1px solid rgba(255,255,255,.12);
+      box-shadow: inset 0 0 0 1px rgba(34,211,238,.10);
+      white-space: nowrap;
+    }
+    .tag.mag{
+      border-color: rgba(255,43,214,.40);
+      box-shadow: inset 0 0 0 1px rgba(255,43,214,.16);
+    }
+
+    /* Título de la sección FUCK en fucsia */
+    details#fuck .sum-title .kicker{
+      color: rgba(255,43,214,.95);
+      text-shadow: 0 0 14px rgba(255,43,214,.22);
+    }
+
+    .callout{
+      margin: 14px 0 10px;
+      padding: 14px 14px;
+      border-radius: 16px;
+      background: rgba(8,12,32,.55);
+      border: 2px solid rgba(34,211,238,.60);
+      box-shadow: var(--glowC);
+    }
+    .callout.mag{ border-color: rgba(255,43,214,.70); box-shadow: var(--glowM); }
+    .callout h4{
+      margin:0 0 6px;
+      letter-spacing:.02em;
+    }
+
+    /* FAQ: pregunta un poco más grande, pero menor que título de sección */
+    .faq h4{
+      font-size: 18px;
+      font-weight: 900;
+    }
+
+    .big-reminder{
+      margin: 16px 0 6px;
+      text-align:center;
+      font-weight: 1000;
+      letter-spacing:.06em;
+      text-transform: uppercase;
+      font-size: clamp(20px, 2.8vw, 28px);
+      background: linear-gradient(90deg, rgba(255,43,214,.95), rgba(34,211,238,.95));
+      -webkit-background-clip:text;
+      background-clip:text;
+      color:transparent;
+      text-shadow: 0 0 18px rgba(255,43,214,.20), 0 0 22px rgba(34,211,238,.16);
+      padding: 6px 0 0;
+    }
+
+    .fab{
+      position:fixed;
+      right: 16px;
+      bottom: 16px;
+      z-index: 50;
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,.10);
+      background:
+        radial-gradient(220px 140px at 20% 20%, rgba(255,43,214,.35), transparent 65%),
+        radial-gradient(220px 140px at 80% 80%, rgba(34,211,238,.28), transparent 65%),
+        rgba(10,16,42,.80);
+      color: var(--ink);
+      padding: 12px 14px;
+      font-weight: 900;
+      letter-spacing:.02em;
+      cursor:pointer;
+      box-shadow: var(--shadow), 0 0 22px rgba(255,43,214,.20), 0 0 22px rgba(34,211,238,.16);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      text-decoration:none;
+      display:inline-flex;
+      align-items:center;
+      gap:10px;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .fab:focus-visible{
+      outline: none;
+      box-shadow: var(--shadow), 0 0 0 3px rgba(34,211,238,.35), 0 0 0 1px rgba(34,211,238,.55) inset;
+    }
+
+    @media (prefers-reduced-motion: reduce){
+      html{scroll-behavior:auto}
+      .caret, .fab, .panel__content{transition:none !important}
+    }
+    .subtle{opacity:.78; font-size:.95em;}
+  /* Spacing for action bullets in TURNO DEL DJ */
+  #sec-3 .content-inner ul{margin:0 0 .85rem 0;}
+  #sec-3 .content-inner ul li{margin:.85rem 0;}
+</style>
+</head>
+
+<body>
+  <div class="bg" aria-hidden="true"></div>
+  <div class="scanlines" aria-hidden="true"></div>
+
+  <a class="skip" href="#contenido">Saltar al contenido</a>
+  <div class="top-bars" aria-hidden="true"></div>
+
+  <header class="hero">
+  <div class="hero-inner">
+    <h1 class="sr-only">GITSTER — ¡más guay, más genial y con más gambling!</h1>
+    <img class="hero-img" src="assets/gitster_hero.png?v=1" alt="GITSTER — ¡más guay, más genial y con más gambling!" loading="eager" decoding="async" />
+  </div>
+</header>
+
+  <main id="contenido" class="wrap">
+
+  <div class="top-cta">
+    <a class="cheat-cta" href="#cheatsheet" aria-label="Ir a la Cheatsheet">Ir a Cheatsheet <span aria-hidden="true">🧠</span></a>
+  </div>
+
+    <section class="accordion" aria-label="Reglas GITSTER (acordeones)">
+
+      
+
+      <details class="panel" id="que-es">
+        <summary aria-label="Abrir sección ¿QUÉ ES ESTO?">
+          <span class="sum-title"><span class="kicker">¿QUÉ ES ESTO? 🪩</span></span>
+          <span class="caret" aria-hidden="true">▾</span>
+        </summary>
+        <div class="panel__content">
+          <div class="content-inner">
+            <p class="lead">
+              <strong>GITSTER</strong> es una variación del famoso juego de ordenar canciones en orden cronológico, pero aquí las <strong>fichas</strong>
+              marcan mucho más el ritmo 🎵<br/>
+              En esta versión, las <strong>apuestas</strong> y los <strong>robos</strong> de cartas no son meros featurings
+              olvidables, ¡son el artista principal! 💃
+            </p>
+          </div>
+        </div>
+      </details>
+
+      <details class="panel" id="necesitas">
+        <summary aria-label="Abrir sección ¿QUÉ SE NECESITA PARA JUGAR?">
+          <span class="sum-title"><span class="kicker">¿QUÉ SE NECESITA PARA JUGAR? 🧩</span></span>
+          <span class="caret" aria-hidden="true">▾</span>
+        </summary>
+        <div class="panel__content">
+          <div class="content-inner">
+            <ul>
+              <li><strong>Juego base</strong> (cartas + fichas + app) 🎵</li>
+              <li><strong>Un altavoz</strong> (opcional pero recomendado) 🔊</li>
+            </ul>
+          </div>
+        </div>
+      </details>
+
+      <details class="panel" id="sec-1">
+        <summary aria-label="Abrir sección 1) OBJETIVO">
+          <span class="sum-title"><span class="kicker">1) OBJETIVO 🎯</span></span>
+          <span class="caret" aria-hidden="true">▾</span>
+        </summary>
+        <div class="panel__content">
+          <div class="content-inner">
+            <p>Construir tu línea temporal (Timeline) colocando canciones en <strong>ORDEN CRONOLÓGICO</strong> (antes/después) ⌛</p>
+            <p>Gana quien termine la partida con <strong>15</strong> cartas en su Timeline 🏁</p>
+            <p class="muted">(El año exacto <strong>NO</strong> hace falta para colocar; solo sirve para ganar fichas)</p>
+          </div>
+        </div>
+      </details>
+
+      <details class="panel" id="sec-2">
+        <summary aria-label="Abrir sección 2) PREPARACIÓN">
+          <span class="sum-title"><span class="kicker">2) PREPARACIÓN 📋</span></span>
+          <span class="caret" aria-hidden="true">▾</span>
+        </summary>
+        <div class="panel__content">
+          <div class="content-inner">
+            <ul>
+              <li>Colocad el mazo en el centro. Cada jugador comienza con <strong>1 carta inicial</strong> en su Timeline (boca arriba) 🃏</li>
+              <li><strong>¿Quién es el primer DJ?</strong> 🎤<br/>
+                Mirad el año de vuestra carta inicial de la Timeline 
+                Empieza el jugador que tenga la canción <strong>MÁS ANTIGUA</strong> 📻
+              </li>
+            </ul>
+
+            <div class="callout mag" role="note" aria-label="Nota EMPATE en preparación">
+              <p><strong style="color: rgba(255,43,214,.95)">EMPATE</strong> – Los empatados roban una carta extra (no cuenta para la Timeline, se descarta)<br/>Gana aquel que tenga la canción <strong>MÁS RECIENTE</strong> ✨</p>
+            </div>
+
+            <ul>
+              <li>Todos los jugadores reciben <strong>3 fichas</strong> de apuesta 🪙🪙🪙</li>
+            </ul>
+
+            <div class="callout" role="note" aria-label="Nota LÍMITE">
+              <p><strong style="color: rgba(34,211,238,.95)">LÍMITE DE FICHAS</strong> – <strong>NO&nbsp;SE&nbsp;PUEDEN ACUMULAR MÁS DE 10 FICHAS</strong><br/>
+                <span class="subtle">Pronto comprobaréis que en el GITSTER se obtienen fichas mucho más rápido que de costumbre, así que atreveos a apostar y a dar rienda suelta a vuestra ludopatía</span> 🤑
+              </p>
+            </div>
+          </div>
+        </div>
+      </details>
+
+      <details class="panel" id="sec-3">
+        <summary aria-label="Abrir sección 3) TURNO DEL DJ">
+          <span class="sum-title"><span class="kicker">3) TURNO DEL DJ 🎧</span></span>
+          <span class="caret" aria-hidden="true">▾</span>
+        </summary>
+        <div class="panel__content">
+          <div class="content-inner">
+            <p>El DJ toma una carta del mazo (boca abajo), escanea la canción y decide qué va a hacer:</p>
+
+            <ul>
+              <li><strong> &nbsp;JUGAR NORMAL</strong> 🎵<br/>Escuchar la canción, colocarla <strong>BOCA ABAJO</strong> en su Timeline, e intentar adivinar <strong>título</strong>, <strong>año</strong> y <strong>artista(s)</strong></li>
+            </ul>
+
+            <div class="callout mag" role="note" aria-label="Nota RITMO">
+              <p><strong style="color: rgba(255,43,214,.95)">RITMO</strong> – La canción se puede escuchar <strong>HASTA EL ESTRIBILLO</strong> (incluido), nada de escucharla entera ⏱️</p>
+            </div>
+
+            <ul>
+              <li><strong> &nbsp;RE-ROLL</strong> 🎲<br/>El DJ puede pagar fichas para <strong>descartar</strong> la carta escaneada y tomar una nueva carta del mazo<br/>
+                Coste por turno (acumulativo): el primer reroll del turno cuesta 1 ficha, el segundo 2, el tercero 3 (casi compensa <strong>COMPRAR LA CARTA</strong>) y así sucesivamente 📈
+              </li>
+              <li><strong> &nbsp;COMPRAR LA CARTA</strong> 💸<br/>Pagando <strong>3</strong> fichas, el DJ puede dar la vuelta a la carta y colocarla en el sitio correcto de su Timeline<br/>En ese turno<br/><strong>NO HABRÁ RONDA DE APUESTAS</strong> 🚫
+              </li>
+            </ul>
+
+            <div class="callout" role="note" aria-label="Nota LEY DE LA VENTAJA">
+              <p><strong style="color: rgba(34,211,238,.95)">LEY DE LA VENTAJA</strong> (si vas ganando o empate) – El (o los) jugadores que tenga(n) más cartas <strong>NO PUEDE(N) COMPRAR CARTAS</strong> (pero sí hacer <strong>RE-ROLL</strong> o <strong>EXPROPIAR UNA CARTA</strong>) ⚖️</p>
+            </div>
+
+            <ul>
+              <li><strong> &nbsp;EXPROPIAR UNA CARTA</strong> 🫳<br/>Pagando <strong>10</strong> fichas, el DJ puede descartar la carta que esté sonando y elegir a otro jugador. A continuación, puede examinar su Timeline y quedarse con la carta que más le convenga (la coloca en el lugar correspondiente de su propia Timeline)<br/>En ese turno<br/><strong>NO HABRÁ RONDA DE APUESTAS</strong> 🚫<br/><span class="muted">¡CUIDADÍN! Gastar 10 fichas supone que te quedas a 0, con lo que no puedes apostar y, por tanto, tardarás al menos una ronda en volver a ganar fichas 😱</span>
+              </li>
+            </ul>
+
+          </div>
+        </div>
+      </details>
+
+      <details class="panel" id="sec-4">
+        <summary aria-label="Abrir sección 4) RONDA DE APUESTAS">
+          <span class="sum-title"><span class="kicker">4) RONDA DE APUESTAS 🎰</span></span>
+          <span class="caret" aria-hidden="true">▾</span>
+        </summary>
+        <div class="panel__content">
+          <div class="content-inner">
+            <p>¡Se acabó el pelearse por quién ha dicho GITSTER primero, quién ha gritado más, quién se pone de portero porque el balón es suyo y si no le dejamos se vuelve a su casa y se lo lleva y blah, blah, blah!</p>
+            <p>Aquí somos <del>adictos al juego</del> jugadores civilizados y, como tales, seguimos un orden 🫡</p>
+
+            <p>La ronda de apuestas comienza por el jugador que esté a la derecha del DJ ➡️</p>
+            <p>En sentido <strong>ANTIHORARIO</strong> (hacia la derecha), los jugadores pueden decidir:</p>
+
+            <ul>
+              <li><strong> &nbsp;PASAR</strong> 🤷‍♀️ &nbsp;</li>
+              <li><strong> &nbsp;PUTEAR AL DJ</strong> pagando <strong>5 fichas</strong> para que <strong>descarte</strong> la carta por la que está jugando en lugar de incorporarla a su Timeline (el descarte se produce después de revelar la carta y de cobrar/pagar las apuestas) 😈</li>
+              <li><strong> &nbsp;APOSTAR 1 ficha</strong> contra la banca a <strong>UNA SOLA</strong> de las siguientes categorías: Orden Cronológico, Título, Artista(s) O Año Exacto 🎰&nbsp;</li>
+            </ul>
+
+            <div class="callout mag" role="note" aria-label="Nota PROHIBIDO REPETIR">
+              <p><strong style="color: rgba(255,43,214,.95)">PROHIBIDO REPETIR</strong> – Si un jugador anterior a ti (DJ incluido) ya ha apostado a una Zona de la Timeline (Orden Cronológico) a la que tú querías apostar o ha dicho un Título, Artista(s) o Año Exacto con el que tú querías apostar; pasas o apuestas a otra cosa
+                Resumiendo, <strong>TE JODES Y BAILAS</strong> (nunca mejor dicho) 🕺</p>
+            </div>
+
+            <div class="callout" role="note" aria-label="Nota VARIOUS ARTISTS">
+              <p><strong style="color: rgba(34,211,238,.95)">VARIOUS ARTISTS</strong> – A la hora de apostar a Artista(s), se puede nombrar a uno o a varios (para quitarle posibilidades de ganar ficha a los jugadores que van detrás de ti) 🖕<br/>; pero si nombras a varios artistas <strong>Y FALLAS UNO, PIERDES LA APUESTA</strong> ☠️
+              </p>
+            </div>
+
+            <div class="callout mag" role="note" aria-label="Nota LEY DE LA VENTAJA II, ahora es personal">
+              <p><strong style="color: rgba(34,211,238,.95)">LEY DE LA VENTAJA II</strong> (si vas ganando o empate), ahora es personal – El (o los) jugadores que tenga(n) más cartas <strong>TAMPOCO PUEDE(N) APOSTAR A ORDEN CRONOLÓGICO</strong>, pero sí pueden <strong>PUTEAR AL DJ</strong> ⚖️</p>
+            </div>
+          </div>
+        </div>
+      </details>
+
+      <details class="panel" id="sec-5">
+        <summary aria-label="Abrir sección 5) RESOLUCIÓN DEL TURNO Y PAGOS DE APUESTAS">
+          <span class="sum-title"><span class="kicker">5) RESOLUCIÓN DEL TURNO Y PAGOS DE APUESTAS 💵</span></span>
+          <span class="caret" aria-hidden="true">▾</span>
+        </summary>
+        <div class="panel__content">
+          <div class="content-inner">
+            <p>Una vez han apostado todos los jugadores que no son el DJ, ya se puede dar la vuelta a la carta:</p>
+            <ul>
+              <li>Si el DJ la colocó bien en su Timeline, se la queda 👍</li>
+              <li>En caso contrario, se descarta, <strong>SALVO</strong> que alguien hubiese apostado al <strong>Orden Cronológico</strong> y haya acertado, en cuyo caso la coloca en el lugar correspondiente de su propia Timeline 😍</li>
+            </ul>
+
+            <p>A continuación, siguiendo el orden de las apuestas (y empezando por el DJ), se cobran/pagan las fichas correspondientes:</p>
+            <ul>
+              <li>Para el DJ, <strong>SIEMPRE Y CUANDO HAYA COLOCADO BIEN LA CARTA EN SU TIMELINE</strong> (en caso contrario, no cobra): <span class="mono">+1</span> si acertó Artista, <span class="mono">+1</span> si acertó Título y <span class="mono">+1</span> si acertó Año (máximo <span class="mono">+ 3</span>) 🪙🪙🪙</li>
+              <li>Para el resto de jugadores (apuestas contra la banca):</li>
+            </ul>
+
+             <ul>
+              <li>Si has acertado tu apuesta, coges fichas de la caja:
+                <ul>
+                  <li><strong>Título</strong>: <strong>+1</strong> 🙂</li> 
+                  <li><strong>Artista principal</strong>: <strong>+1</strong> 😊</li> 
+                  <li><strong>Artista NO principal</strong> (solo apuesta): <strong>+2</strong> 😄😁</li>
+                  <li><strong>Año Exacto</strong> (solo apuesta): <strong>+2</strong> 🤩🥳</li>
+                </ul>
+              </li>
+              <li>Si has fallado tu apuesta, dejas <strong>1 ficha</strong> en la caja (<strong>-1</strong>) 😭</li>
+              <li>Si has pasado (no has apostado), eres un cagao y te quedas igual 💩</li>
+            </ul>
+
+            <div class="callout" role="note" aria-label="Nota TITULITIS">
+              <p><strong style="color: rgba(34,211,238,.95)">TITULITIS</strong> – Para que se dé por buena una apuesta de Título, hay que decirlo <strong>(casi) PERFECTO</strong>, con sus artículos, sus palabras pequeñitas y demás ☝️🤓 
+                Lo único que se puede permitir no decir son los "subtítulos" que van entre paréntesis. Ej.: Blue (Da Ba Dee) vale con "Blue" </p>
+            </div>  
+
+            <div class="callout mag" role="note" aria-label="Nota ARTISTAS PRINCIPALES">
+              <p><strong style="color: rgba(34,211,238,.95)">¿ARTISTA PRINCIPAL o FEATURING?</strong> – Una canción puede tener <strong>1 o varios</strong> artistas principales (Ej.: Las Bizarrap Sesions). “Artista NO principal” = artista acreditado como invitado/feat/extra (según lo interpretéis en mesa, yo me desentiendo) 🙈🙉🙊</p>
+
+            </div>  
+
+            <div class="big-reminder">¡RECORDAD EL LÍMITE MÁXIMO DE 10 FICHAS!</div>
+          </div>
+        </div>
+      </details>
+
+      <details class="panel" id="sec-6">
+        <summary aria-label="Abrir sección 6) FIN DE LA PARTIDA">
+          <span class="sum-title"><span class="kicker">6) FIN DE LA PARTIDA 🏁</span></span>
+          <span class="caret" aria-hidden="true">▾</span>
+        </summary>
+        <div class="panel__content">
+          <div class="content-inner">            
+            <p>Cuando alguien llegue a <strong>15</strong> cartas en su Timeline <strong>NO</strong> se acaba la partida 🤷‍♂️</p>
+            <p>Se termina al final de la ronda cuando alguien tenga <strong>15 (o más)</strong> cartas ↩️</p>
+
+            <div class="callout mag" role="note" aria-label="Nota EMPATE">
+              <p><strong style="color: rgba(255,43,214,.95)">EMPATE A 15</strong> - Gana quien tenga más fichas 🪙🪙🪙🪙🪙🪙🪙🪙🪙🪙</p>
+            </div>
+
+            <div class="callout" role="note" aria-label="Nota EMPATE A FICHAS">
+              <p><strong style="color: rgba(34,211,238,.95)">EMPATE A FICHAS</strong> 😱 - Si sigue el empate: <strong>MUERTE SÚBITA</strong> ☠️<br/>
+                Los empatados juegan <strong>1</strong> turno cada uno (en el orden normal) y gana el primero que consiga <strong>+1 carta</strong> (<strong>SIN COMPRAR</strong>). Si ambos la consiguen en la misma ronda: gana quien termine con más fichas.
+              </p>
+            </div>
+          </div>
+        </div>
+      </details>
+
+<details id="cheatsheet" class="panel featured">
+        <summary aria-label="Abrir sección CHEATSHEET">
+          <span class="sum-title"><span class="kicker">CHEATSHEET 🧠</span></span>
+          <span class="caret" aria-hidden="true">▾</span>
+        </summary>
+        <div class="panel__content">
+          <div class="content-inner">
+            <ul>
+  <li>Empieza el de la canción más antigua. En apuestas, empieza siempre el jugador a la derecha del DJ ▶️</li>
+  <li>Fichas iniciales: <span class="mono">3</span> 🪙🪙🪙</li>
+  <li>Límite de fichas: <span class="mono">10</span> ⚠️</li>
+  <li>La canción se puede escuchar hasta el estribillo (incluido) ⏳</li>
+  <li>Re-roll: 1º cuesta <span class="mono">1</span>, 2º cuesta <span class="mono">2</span>, 3º cuesta <span class="mono">3</span>… (en el mismo turno) 🎲</li>
+  <li>Comprar carta: cuesta <span class="mono">3</span> fichas 💸</li>
+  <li><strong>LEY DE LA VENTAJA</strong> (si vas ganando o empate): <strong>NO SE PUEDE COMPRAR</strong> 👑⛔</li>
+  <li>Apuestas en orden y en sentido <strong>ANTIHORARIO</strong> (a la derecha): <span class="mono">1</span> ficha, <span class="mono">1</span> categoría, y sin repetir elección 🚫🎰</li>
+  <li><strong>LEY DE LA VENTAJA II</strong> (si vas ganando o empate): <strong>NO PUEDES APOSTAR</strong> a Orden Cronológico (pero sí <strong>PUTEAR AL DJ</strong>) ⚖️</li>
+  <li><strong>PUTEAR AL DJ</strong>: paga <span class="mono">5</span> fichas para que descarte la carta que está jugando 😈</li>
+  <li><strong>EXPROPIAR</strong>: paga <span class="mono">10</span> fichas (te quedas a 0), descartas la carta que suena y robas una carta del Timeline de otro jugador 🫳</li>
+  <li>Si fallas (al menos) un artista, pierdes la apuesta ☠️</li>
+  <li>El puesto de DJ rota a la derecha al acabar un turno ➡️</li>
+  <li>Se gana al llegar a <span class="mono">15</span> cartas en la Timeline <strong>AL FINAL DE LA RONDA</strong> ↩️</li>
+</ul>
+          </div>
+        </div>
+      </details>
+
+
+      <details class="panel" id="fuck">
+        <summary aria-label="Abrir sección FUCK (Frequently Usked CKuestions)">
+          <span class="sum-title"><span class="kicker">FUCK (Frequently Usked CKuestions) 🙋‍♀️</span></span>
+          <span class="caret" aria-hidden="true">▾</span>
+        </summary>
+        <div class="panel__content">
+          <div class="content-inner faq">
+
+            <div class="callout mag" role="note" aria-label="FAQ Jugadores y equipos">
+              <h4>¿Para cuántos jugadores es? ¿Se puede jugar en equipos?</h4>
+              <p>GITSTER es un juego pensado para 4-7 jugadores 🚶‍♂️🚶‍♀️🚶🚶‍♂️+🚶‍♀️🚶🚶‍♂️</p>
+              <p>Pero tranquilidad Míster Sociable / Miss Popularidad 😎, que si sois +8 jugadores, podéis jugar en equipos, aunque tendréis que consensuar las decisiones de la Timeline y de las Apuestas 🤝</p>
+              <ul>
+                <li>8 jugadores = 4 parejas 🧑‍🤝‍🧑🧑‍🤝‍🧑🧑‍🤝‍🧑🧑‍🤝‍🧑</li>
+                <li>9 jugadores = 3 tríos 👪👪👪 ó 3 parejas + 1 trío 🧑‍🤝‍🧑🧑‍🤝‍🧑🧑‍🤝‍🧑👪</li>
+                <li>10 jugadores = 5 parejas 🧑‍🤝‍🧑🧑‍🤝‍🧑🧑‍🤝‍🧑🧑‍🤝‍🧑🧑‍🤝‍🧑</li>
+                <li>11 jugadores = 3 tríos + 1 pareja 👪👪👪🧑‍🤝‍🧑</li>
+                <li>12 jugadores = 4 tríos 👪👪👪👪</li>
+              </ul>
+              <p>Y no os ponemos más ejemplos porque creemos que lo habéis pillado (y porque sabemos que nadie tiene más de 12 amigos, tampoco os flipéis tanto)</p>
+            </div>
+
+            <div class="callout" role="note" aria-label="FAQ Comprar cartas">
+              <h4>¿Para qué sirve comprar cartas?</h4>
+              <p>Comprar cartas es una forma de gastar las fichas de apuesta que has conseguido. 🤑</p>
+              <p><strong>⚠️ ¡Recuerda que no puedes acumular más de 10! 👀</strong></p>
+              <p>Además, esto es un mecanismo que te permite alcanzar a los jugadores más aventajados de la partida si no te ha ido muy bien y te has quedado atrás 📉🚀</p>
+            </div>
+
+          </div>
+        </div>
+      </details>
+
+    </section>
+  </main>
+
+  <a class="fab" id="cheatsheetFab" href="#cheatsheet" aria-label="Ir a CHEATSHEET">Cheatsheet</a>
+
+  <script>
+(() => {
+  const panels = Array.from(document.querySelectorAll('details.panel'));
+  const DURATION = 280; // debe coincidir con el CSS (transition)
+
+  const prefersReducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const smoothBehavior = prefersReducedMotion ? 'auto' : 'smooth';
+
+  function getContent(d){
+    return d.querySelector('.panel__content');
+  }
+
+  function setExpanded(d, expanded){
+    const content = getContent(d);
+    if (!content) {
+      d.open = expanded;
+      d.classList.toggle('is-open', expanded);
+      return;
+    }
+
+    if (expanded) {
+      d.open = true;
+      d.classList.add('is-open');
+      // animación: 0 -> scrollHeight
+      content.style.maxHeight = content.scrollHeight + 'px';
+    } else {
+      // animación: scrollHeight -> 0
+      d.classList.remove('is-open');
+      content.style.maxHeight = content.scrollHeight + 'px';
+      requestAnimationFrame(() => {
+        content.style.maxHeight = '0px';
+      });
+      window.setTimeout(() => {
+        d.open = false;
+      }, prefersReducedMotion ? 0 : DURATION);
+    }
+  }
+
+  function closeOthers(current){
+    panels.forEach(p => {
+      if (p !== current && p.open) setExpanded(p, false);
+    });
+  }
+
+  // Init + click override (para animación + modo "solo una abierta")
+  panels.forEach(d => {
+    const summary = d.querySelector('summary');
+    const content = getContent(d);
+
+    // estado inicial
+    d.classList.toggle('is-open', d.open);
+    if (content) content.style.maxHeight = d.open ? (content.scrollHeight + 'px') : '0px';
+
+    summary?.addEventListener('click', (e) => {
+      e.preventDefault();
+      const willOpen = !d.open;
+      if (willOpen) closeOthers(d);
+      setExpanded(d, willOpen);
+    });
+  });
+
+  // Recalcula alturas al rotar / cambiar tamaño
+  window.addEventListener('resize', () => {
+    panels.forEach(d => {
+      if (!d.open) return;
+      const content = getContent(d);
+      if (content) content.style.maxHeight = content.scrollHeight + 'px';
+    });
+  });
+
+  // Jump + abrir Cheatsheet (botón grande + FAB)
+  function openCheatsheet(){
+    const cs = document.getElementById('cheatsheet');
+    if (!cs) return;
+    closeOthers(cs);
+    setExpanded(cs, true);
+    cs.scrollIntoView({ behavior: smoothBehavior, block: 'start' });
+    history.replaceState(null, '', '#cheatsheet');
+  }
+
+  document.querySelectorAll('a[href="#cheatsheet"]').forEach(a => {
+    a.addEventListener('click', (e) => {
+      e.preventDefault();
+      openCheatsheet();
+    });
+  });
+
+  // Si se entra con #cheatsheet en la URL, ábrela
+  if (location.hash === '#cheatsheet') {
+    // deja que pinte 1 frame antes de calcular scrollHeight
+    requestAnimationFrame(openCheatsheet);
+  }
+})();
+</script>
+</body>
+</html>
