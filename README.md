@@ -1,105 +1,69 @@
 # GITSTER 🎧🪩🎰
+**¡Más guay, más genial y con más gambling!**
 
-**GITSTER** es un juego tipo *timeline musical* con **economía de fichas y apuestas**: colocas canciones en orden cronológico, negocias riesgos, y ganas si consigues completar tu timeline antes que el resto.
-
-➡️ **Reglas (web):** https://guillermo-gil-garro.github.io/GITSTER/  
-📄 **Reglamento (PDF):** `docs/rules/` (en este repo)
+Gitster es una variación del Hitster pero donde las **fichas**, las **apuestas** y los **robos** no son un extra: son el artista principal. 💃🕺
 
 ---
 
-## 🎯 ¿QUÉ ES ESTO?
+## 📜 Reglas (la fuente de verdad)
+Las reglas **oficiales** viven en la web (HTML), porque aquí se actualiza rápido y sin dramas:
 
-- Un **juego de mesa** inspirado en el “coloca la canción en su año” con un toque extra de **gambling** 🎰  
-- Un proyecto **Data + Design**:
-  - **Pipeline**: playlists de Spotify → dataset → mazo (cartas)
-  - **Diseño**: cartas imprimibles con estética club/neón
-  - **App** (más adelante): soporte para escaneo/reproducción y gestión de mazos
+➡️ **Reglas online (GitHub Pages):** `https://guillermo-gil-garro.github.io/GITSTER/`
 
----
-
-## 🧩 QUÉ ENCUENTRAS EN ESTE REPO
-
-- ✅ **Web de reglas** (GitHub Pages) para compartir con colegas
-- ✅ Assets de la web (imágenes, estilos)
-- 🛠️ (En progreso) Pipeline de datos y generación de mazo/cartas
-- 🧠 (En progreso) PRD / prototipo de app
+> Nota: si alguien te pasa un PDF antiguo… probablemente está desactualizado. Te jodes y bailas. 🕺
 
 ---
 
-## 🎮 CÓMO SE JUEGA (RESUMEN)
-
-1) **Construye tu timeline** colocando canciones en orden cronológico  
-2) **Apuesta fichas** cuando toque: aquí es donde pasa la magia 🎰  
-3) **Revela** y resuelve: si aciertas, avanzas; si fallas… se paga el precio  
-4) **Gana** quien complete antes el objetivo de cartas/timeline según el reglamento
-
-📌 **El detalle fino y las reglas exactas** están en la web de reglas:  
-https://guillermo-gil-garro.github.io/GITSTER/
+## ⚡ Cheatsheet (lo mínimo para sobrevivir)
+- Objetivo: construir tu **Timeline** en **orden cronológico** ⌛
+- Se gana al llegar a **12 cartas** (con diferencia ≥ 2) **al final de la ronda** ↩️
+- Fichas iniciales: **3** 🪙🪙🪙
+- Límite de fichas: **10** ⚠️
+- La canción se escucha **hasta el estribillo (incluido)** ⏳
+- Opciones del DJ:
+  - **Jugar normal** 🎵
+  - **Re-roll** 🎲 (coste acumulativo en el turno: 1, 2, 3…)
+  - **Comprar carta** 💸 (3 fichas y **no hay ronda de apuestas**)
+  - **Expropiar** 🫳 (10 fichas y **no hay ronda de apuestas**)
+- Apuestas: empiezan a la **derecha del DJ**, en sentido **antihorario** ➡️
+- **Prohibido repetir**: si ya lo dijo otro antes, **te jodes y bailas** 🚫🕺
+- **Puteo al DJ** 😈: pagando **5 fichas**, fuerzas descarte de su carta
+- **Ley de la ventaja** ⚖️: si vas en cabeza, te recortamos opciones (para que no snowballee)
 
 ---
 
-## 🗂️ ESTRUCTURA DEL REPO (RÁPIDA)
+## 🧠 ¿Qué hay en este repo?
+Este repo tiene 2 cosas:
+1) **La web de reglas** (lo que ve la peña) 🌐
+2) **El proyecto futuro** (pipeline + cartas + app) 👷‍♂️
 
-- `docs/` → **Sitio web** (lo que publica GitHub Pages)
+### Estructura (simple y sin humo)
+- `docs/` → **Sitio web** (GitHub Pages)
 - `docs/assets/` → imágenes/recursos de la web
-- `docs/rules/` → reglamento y materiales del juego
-- *(próximamente)* `src/`, `scripts/`, `notebooks/` → pipeline y generación del mazo
+- `src/` → código del pipeline (futuro)
+- `scripts/` → scripts ejecutables (futuro)
+- `notebooks/` → experimentos / EDA (futuro)
+- `outputs/` → exports (deck, renders, etc.) (futuro)
+- `design/` → plantillas y diseño de cartas (futuro)
+
+> GitHub no guarda carpetas vacías: si ves un `.gitkeep`, es para que exista la carpeta.
 
 ---
 
-## 🌐 PUBLICAR / EDITAR LA WEB DE REGLAS (SIN MISTERIOS)
-
-Este repo usa **GitHub Pages** apuntando a la carpeta `/docs`.
-
-- La página principal **DEBE** llamarse: `docs/index.html`
-- Las imágenes deben estar en rutas correctas (ej. `docs/assets/...`)
-
-### Si quieres editar algo rápido
-1. Entra a `docs/index.html`
-2. Pulsa el ✏️ (Edit)
-3. Cambia lo que quieras
-4. **Commit changes** ✅
+## 🧩 Roadmap (lo que se viene)
+- Pipeline: Spotify playlists → dataset → mazo (cartas)
+- Diseño: cartas imprimibles con estética club/neón
+- App (más adelante): soporte para escaneo/reproducción + gestión de mazos
 
 ---
 
-## 🧪 ROADMAP (LO QUE VIENE)
-
-**MVP 1 — Web + reglas (hecho ✅)**
-- [x] Publicación de reglas en Pages
-- [x] Estructura base del repo
-
-**MVP 2 — Pipeline de datos**
-- [ ] Ingesta de playlists
-- [ ] Export a dataset único (CSV/Parquet)
-- [ ] Reporte de calidad (duplicados, fechas faltantes, etc.)
-
-**MVP 3 — Cartas**
-- [ ] Plantilla visual (print + PNG)
-- [ ] Generación batch desde dataset
-- [ ] Control de calidad (márgenes, legibilidad)
-
-**V2 — App**
-- [ ] Escaneo / reproducción / reveal
-- [ ] Gestión de mazos personalizados
-- [ ] Partidas y registro de apuestas (si aplica)
-
----
-
-## 🤝 CONTRIBUIR
-
-¿Quieres ayudar? Bienvenido/a 🎧🪩  
-- Abre un **Issue** con sugerencias, bugs o ideas de balance
-- O propone cambios mediante PR (si te doy acceso / si procede)
-
----
-
-## ⚠️ NOTA LEGAL / DISCLAIMER
-
-Proyecto fan/experimental. No está afiliado ni respaldado por Spotify/GitHub ni por ninguna marca relacionada.  
-Las reglas, assets y el diseño de este proyecto son propios del repo (salvo que se indique lo contrario).
+## 🤝 Contribuir
+- Issues: bugs / ideas
+- PRs: mejoras a reglas/web
+- FACK: preguntas para la sección de Frecuently Usked CKuestions
 
 ---
 
 ## 📬 CONTACTO
-
-Si eres colega y quieres meter tus playlists en el mazo: escríbeme y te digo el formato/flujo (sin subir datos sensibles al repo).
+Si eres colega y quieres meter tus playlists en el mazo: escríbeme y te digo el formato/flujo (sin subir datos sensibles al repo)
+Si no tienes ni pipa de manejar esto, pero te gustaría tener tu propia baraja de Gitster (tus canciones y las de tus amigos), escríbeme igualmente y según esté de curro lo hacemos
