@@ -1,13 +1,13 @@
-<!DOCTYPE html>
-
+<!doctype html>
 <html lang="es">
 <head>
-<meta charset="utf-8"/>
-<meta content="width=device-width,initial-scale=1,viewport-fit=cover" name="viewport"/>
-<title>GITSTER</title>
-<meta content="dark" name="color-scheme"/>
-<meta content="#060814" name="theme-color"/>
-<!--
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>GITSTER</title>
+  <meta name="color-scheme" content="dark" />
+  <meta name="theme-color" content="#060814" />
+
+  <!--
     ASSETS (obligatorio)
     Dentro de `docs/assets/` (al mismo nivel que este `index.html`) pon:
       - gitster_bg.png    (fondo)
@@ -15,7 +15,8 @@
 
     Nota: si el móvil te cachea la imagen antigua, cambia el `?v=1` a `?v=2` en este HTML.
   -->
-<style>
+
+  <style>
     :root{
       --bg0:#060814;
       --bg1:#070b1c;
@@ -310,33 +311,6 @@
     .mono{font-variant-numeric: tabular-nums}
     .muted{color: var(--muted)}
 
-
-    .tag{
-      display:inline-block;
-      padding: .18em .60em;
-      border-radius: 999px;
-      font-weight: 950;
-      letter-spacing: .06em;
-      text-transform: uppercase;
-      font-size: .74em;
-      line-height: 1.1;
-      color: rgba(255,255,255,.96);
-      background: rgba(255,255,255,.06);
-      border: 1px solid rgba(255,43,214,.42);
-      box-shadow: 0 0 16px rgba(255,43,214,.18), 0 0 14px rgba(34,211,238,.12);
-      white-space: nowrap;
-    }
-
-    .tldr{
-      margin: 10px 0 12px;
-      padding: 10px 12px;
-      border-radius: 14px;
-      background: rgba(255,255,255,.04);
-      border: 1px solid rgba(255,255,255,.08);
-      color: rgba(238,242,255,.94);
-    }
-    .tldr strong{color:#fff}
-
     .callout{
       margin: 14px 0 10px;
       padding: 14px 14px;
@@ -408,331 +382,320 @@
     }
   </style>
 </head>
+
 <body>
-<div aria-hidden="true" class="bg"></div>
-<div aria-hidden="true" class="scanlines"></div>
-<a class="skip" href="#contenido">Saltar al contenido</a>
-<div aria-hidden="true" class="top-bars"></div>
-<header class="hero">
-<div class="hero-inner">
-<h1 class="sr-only">GITSTER — ¡más guay, más genial y con más gambling!</h1>
-<img alt="GITSTER — ¡más guay, más genial y con más gambling!" class="hero-img" decoding="async" loading="eager" src="assets/gitster_hero.png?v=1"/>
-</div>
+  <div class="bg" aria-hidden="true"></div>
+  <div class="scanlines" aria-hidden="true"></div>
+
+  <a class="skip" href="#contenido">Saltar al contenido</a>
+  <div class="top-bars" aria-hidden="true"></div>
+
+  <header class="hero">
+  <div class="hero-inner">
+    <h1 class="sr-only">GITSTER — ¡más guay, más genial y con más gambling!</h1>
+    <img class="hero-img" src="assets/gitster_hero.png?v=1" alt="GITSTER — ¡más guay, más genial y con más gambling!" loading="eager" decoding="async" />
+  </div>
 </header>
-<main class="wrap" id="contenido">
-<div class="top-cta">
-<a aria-label="Ir a la Cheatsheet" class="cheat-cta" href="#cheatsheet">Ir a Cheatsheet <span aria-hidden="true">🧠</span></a>
-</div>
-<section aria-label="Reglas GITSTER (acordeones)" class="accordion">
-<details class="panel" id="que-es">
-<summary aria-label="Abrir sección ¿QUÉ ES ESTO?">
-<span class="sum-title"><span class="kicker">¿QUÉ ES ESTO?</span> 🪩</span>
-<span aria-hidden="true" class="caret">▾</span>
-</summary>
-<div class="panel__content">
-<div class="content-inner">
-<p class="lead">GITSTER es una variación del famoso juego de ordenar canciones en orden cronológico, pero aquí las <strong>fichas</strong> marcan mucho más el ritmo. En esta versión, las <strong>apuestas</strong> y los <strong>robos</strong> de cartas no son meros featurings olvidables, ¡son el artista principal!</p>
-</div>
-</div>
-</details>
-<details class="panel" id="necesitas">
-<summary aria-label="Abrir sección ¿QUÉ SE NECESITA PARA JUGAR?">
-<span class="sum-title"><span class="kicker">¿QUÉ SE NECESITA PARA JUGAR?</span> 🧩</span>
-<span aria-hidden="true" class="caret">▾</span>
-</summary>
-<div class="panel__content">
-<div class="content-inner">
-<ul>
-              <li><strong>Juego base</strong> (cartas + fichas + app)</li>
-              <li><span class="muted">(Opcional pero recomendado)</span> Un altavoz</li>
-            </ul>
-</div>
-</div>
-</details>
-<details class="panel" id="sec-1">
-<summary aria-label="Abrir sección 1) OBJETIVO">
-<span class="sum-title"><span class="kicker">1) OBJETIVO</span> 🎯</span>
-<span aria-hidden="true" class="caret">▾</span>
-</summary>
-<div class="panel__content">
-<div class="content-inner">
-<p class="tldr"><strong>TL;DR:</strong> Coloca canciones en tu Timeline en <strong>orden cronológico</strong>. Ganas al llegar a <strong>12</strong> cartas.</p>
-            <ul>
-              <li>Construir tu línea temporal (Timeline) colocando canciones en <strong>ORDEN CRONOLÓGICO</strong> (antes/después).</li>
-              <li>Gana quien termine la partida con <strong>12</strong> cartas en su Timeline.</li>
-            </ul>
-            <p class="muted">(El año exacto NO hace falta para colocar; solo sirve para ganar fichas.)</p>
-</div>
-</div>
-</details>
-<details class="panel" id="sec-2">
-<summary aria-label="Abrir sección 2) PREPARACIÓN">
-<span class="sum-title"><span class="kicker">2) PREPARACIÓN</span> ✅</span>
-<span aria-hidden="true" class="caret">▾</span>
-</summary>
-<div class="panel__content">
-<div class="content-inner">
-<p class="tldr"><strong>TL;DR:</strong> 1 carta inicial, empieza la más antigua, todos con <strong>3</strong> fichas (máx. <strong>10</strong>).</p>
 
+  <main id="contenido" class="wrap">
+
+  <div class="top-cta">
+    <a class="cheat-cta" href="#cheatsheet" aria-label="Ir a la Cheatsheet">Ir a Cheatsheet <span aria-hidden="true">🧠</span></a>
+  </div>
+
+    <section class="accordion" aria-label="Reglas GITSTER (acordeones)">
+
+      
+
+      <details class="panel" id="que-es">
+        <summary aria-label="Abrir sección ¿QUÉ ES ESTO?">
+          <span class="sum-title"><span class="kicker">¿QUÉ ES ESTO?</span> 🪩</span>
+          <span class="caret" aria-hidden="true">▾</span>
+        </summary>
+        <div class="panel__content">
+          <div class="content-inner">
+            <p class="lead">
+              <strong>GITSTER</strong> es una variación del famoso juego de ordenar canciones en orden cronológico, pero aquí las <strong>fichas</strong>
+              marcan mucho más el ritmo
+              En esta versión, las <strong>apuestas</strong> y los <strong>robos</strong> de cartas no son meros featurings
+              olvidables, ¡son el artista principal! 💃
+            </p>
+          </div>
+        </div>
+      </details>
+
+      <details class="panel" id="necesitas">
+        <summary aria-label="Abrir sección ¿QUÉ SE NECESITA PARA JUGAR?">
+          <span class="sum-title"><span class="kicker">¿QUÉ SE NECESITA PARA JUGAR?</span> 🧩</span>
+          <span class="caret" aria-hidden="true">▾</span>
+        </summary>
+        <div class="panel__content">
+          <div class="content-inner">
             <ul>
-              <li>Colocad el mazo en el centro. Cada jugador comienza con <strong>1 carta inicial</strong> en su Timeline (boca arriba).</li>
+              <li><strong>Juego base</strong> (cartas + fichas + app) 🎵</li>
+              <li>(Opcional pero recomendado) <strong>Un altavoz</strong> 🔊</li>
+            </ul>
+          </div>
+        </div>
+      </details>
+
+      <details class="panel" id="sec-1">
+        <summary aria-label="Abrir sección 1) OBJETIVO">
+          <span class="sum-title"><span class="kicker">1) OBJETIVO</span> 🎯</span>
+          <span class="caret" aria-hidden="true">▾</span>
+        </summary>
+        <div class="panel__content">
+          <div class="content-inner">
+            <p>Construir tu línea temporal (Timeline) colocando canciones en <strong>ORDEN CRONOLÓGICO</strong> (antes/después) ⌛</p>
+            <p>Gana quien termine la partida con <strong>15</strong> cartas en su Timeline 🏁</p>
+            <p class="muted">(El año exacto <strong>NO</strong> hace falta para colocar; solo sirve para ganar fichas)</p>
+          </div>
+        </div>
+      </details>
+
+      <details class="panel" id="sec-2">
+        <summary aria-label="Abrir sección 2) PREPARACIÓN">
+          <span class="sum-title"><span class="kicker">2) PREPARACIÓN</span> 📋</span>
+          <span class="caret" aria-hidden="true">▾</span>
+        </summary>
+        <div class="panel__content">
+          <div class="content-inner">
+            <ul>
+              <li>Colocad el mazo en el centro. Cada jugador comienza con <strong>1 carta inicial</strong> en su Timeline (boca arriba) 🃏</li>
+              <li><strong>¿Quién es el primer DJ?</strong> 🎤<br/>
+                Mirad el año de vuestra carta inicial de la Timeline 
+                Empieza el jugador que tenga la canción <strong>MÁS ANTIGUA</strong> 📻
+              </li>
             </ul>
 
-            <p><strong>¿Quién es el primer DJ?</strong></p>
-            <ul>
-              <li>Mirad el año de vuestra carta inicial de la Timeline. Empieza el jugador que tenga la canción <strong>MÁS ANTIGUA</strong>.</li>
-            </ul>
-
-            <div class="callout mag">
-              <h4>EMPATE</h4>
-              <p>Los empatados roban una carta extra (no cuenta para la Timeline, se descarta). Gana aquel que tenga la canción <strong>MÁS RECIENTE</strong> ✨</p>
+            <div class="callout mag" role="note" aria-label="Nota EMPATE en preparación">
+              <p><strong style="color: rgba(255,43,214,.95)">EMPATE</strong> – Los empatados roban una carta extra (no cuenta para la Timeline, se descarta). Gana aquel que tenga la canción <strong>MÁS RECIENTE</strong> ✨</p>
             </div>
 
             <ul>
-              <li>Todos los jugadores reciben <strong>3</strong> fichas de apuesta.</li>
+              <li>Todos los jugadores reciben <strong>3 fichas</strong> de apuesta 💰💰💰</li>
             </ul>
 
-            <div class="callout">
-              <h4>LÍMITE DE FICHAS</h4>
-              <p>NO SE PUEDEN ACUMULAR MÁS DE <strong>10 FICHAS</strong>. Si al ganar fichas te pasas de 10, te quedas en 10.</p>
+            <div class="callout" role="note" aria-label="Nota LÍMITE">
+              <p><strong style="color: rgba(34,211,238,.95)">LÍMITE DE FUCHAS</strong> – <strong>NO SE PUEDEN ACUMULAR MÁS DE 10 FICHAS</strong><br/>
+                Pronto comprobaréis que en el GITSTER se obtienen fichas mucho más rápido que de costumbre, así que atreveos a apostar y a dar rienda suelta a vuestra ludopatía 🤑
+              </p>
             </div>
-</div>
-</div>
-</details>
-<details class="panel" id="sec-3">
-<summary aria-label="Abrir sección 3) TURNO DEL DJ">
-<span class="sum-title"><span class="kicker">3) TURNO DEL DJ</span> 🎧</span>
-<span aria-hidden="true" class="caret">▾</span>
-</summary>
-<div class="panel__content">
-<div class="content-inner">
-<p class="tldr"><strong>TL;DR:</strong> El DJ escanea una carta y elige: <strong>A)</strong> jugar, <strong>B)</strong> re-roll, <strong>C)</strong> comprar.</p>
+          </div>
+        </div>
+      </details>
 
+      <details class="panel" id="sec-3">
+        <summary aria-label="Abrir sección 3) TURNO DEL DJ">
+          <span class="sum-title"><span class="kicker">3) TURNO DEL DJ</span> 🎧</span>
+          <span class="caret" aria-hidden="true">▾</span>
+        </summary>
+        <div class="panel__content">
+          <div class="content-inner">
             <p>El DJ toma una carta del mazo (boca abajo), escanea la canción y decide qué va a hacer:</p>
 
-            <p><strong>A) Jugar normal</strong></p>
             <ul>
-              <li>Escucha la canción y la coloca <strong>BOCA ABAJO</strong> en su Timeline.</li>
-              <li>Intenta adivinar <strong>título</strong>, <strong>año</strong> y <strong>artista(s)</strong>.</li>
+              <li><strong> &nbsp;JUGAR NORMAL</strong> 🎵 &nbsp;
+                Escuchar la canción, colocarla <strong>BOCA ABAJO</strong> en su Timeline, e intentar adivinar <strong>título</strong>, <strong>año</strong> y <strong>artista(s)</strong></li>
             </ul>
 
-            <div class="callout mag">
-              <h4>LÍMITE DE RITMO</h4>
-              <p>La canción se puede escuchar <strong>HASTA EL ESTRIBILLO (incluido)</strong>, nada de escucharla entera.</p>
+            <div class="callout mag" role="note" aria-label="Nota RITMO">
+              <p><strong style="color: rgba(255,43,214,.95)">RITMO</strong> – La canción se puede escuchar <strong>HASTA EL ESTRIBILLO</strong> (incluido), nada de escucharla entera ⏱️</p>
             </div>
 
-            <p><strong>B) RE-ROLL</strong></p>
             <ul>
-              <li>El DJ puede pagar fichas para <strong>descartar</strong> la carta escaneada y tomar una nueva carta del mazo.</li>
-              <li>Coste por turno (acumulativo): <strong>1º</strong> re-roll = <strong>1</strong> ficha, <strong>2º</strong> = <strong>2</strong>, <strong>3º</strong> = <strong>3</strong>…</li>
+              <li><strong> &nbsp;RE-ROLL</strong> 🎲 &nbsp;<strong>
+                El DJ puede pagar fichas para <strong>descartar</strong> la carta escaneada y tomar una nueva carta del mazo</li>
+                Coste por turno (acumulativo): el primer reroll del turno cuesta 1 ficha, el segundo 2, el tercero 3 (casi compensa <strong>COMPRAR LA CARTA</strong>) y así sucesivamente 📈
+            </li>
+              <li><strong> &nbsp;COMPRAR LA CARTA</strong> 💸 &nbsp;
+                Pagando <strong>3</strong> fichas, el DJ puede dar la vuelta a la carta y colocarla en el sitio correcto de su Timeline
+                En ese turno <strong>NO HABRÁ RONDA DE APUESTAS</strong> 🚫
+              </li>
             </ul>
 
-            <p><strong>C) Comprar la carta</strong></p>
-            <ul>
-              <li>Pagando <strong>3</strong> fichas, el DJ puede dar la vuelta a la carta y colocarla en el sitio correcto de su Timeline.</li>
-              <li>En ese turno <strong>NO HABRÁ RONDA DE APUESTAS</strong>.</li>
-            </ul>
-
-            <div class="callout">
-              <h4>PREVENCIÓN DE SNOWBALL</h4>
-              <p>El (o los) jugadores que vaya(n) <strong>primero</strong> (o <strong>empatado(s) primero</strong>) <strong>NO PUEDE(N) COMPRAR CARTAS</strong> 🚫</p>
+            <div class="callout" role="note" aria-label="Nota LEY DE LA VENTAJA">
+              <p><strong style="color: rgba(34,211,238,.95)">LEY DE LA VENTAJA</strong> – El (o los) jugadores que tenga(n) más cartas <strong>NO PUEDE(N) COMPRAR CARTAS</strong> (pero sí hacer <strong>RE-ROLL</strong> o <strong>EXPROPIAR UNA CARTA</strong>) ⚖️</p>
             </div>
 
-            <div class="callout">
-              <h4>🎰 GASTOS ESPECIALES (en tu turno)</h4>
-              <ul>
-                <li><strong>(5 fichas) DESCARTE</strong> — Si hay un jugador con <strong>más cartas que tú</strong>, elige a uno: ese jugador <strong>descarta</strong> <strong>1</strong> carta de su Timeline, elegida por él. <span class="muted">(Tú sigues jugando tu turno normal.)</span></li>
-                <li><strong>(10 fichas) ROBO TOTAL</strong> — Pagas <strong>10</strong> fichas (te quedas a 0) y <strong>NO</strong> juegas tu carta del turno (se descarta). Elige a un jugador con <strong>más cartas que tú</strong>, elige <strong>1</strong> carta de su Timeline y la <strong>robas</strong>: la colocas en tu Timeline.</li>
-              </ul>
-            </div>
-</div>
-</div>
-</details>
-<details class="panel" id="sec-4">
-<summary aria-label="Abrir sección 4) RONDA DE APUESTAS">
-<span class="sum-title"><span class="kicker">4) RONDA DE APUESTAS</span> 🎰</span>
-<span aria-hidden="true" class="caret">▾</span>
-</summary>
-<div class="panel__content">
-<div class="content-inner">
-<p class="tldr"><strong>TL;DR:</strong> Se apuesta en orden <strong>hacia la derecha</strong>, empezando por el jugador a la <strong>derecha del DJ</strong>. Máximo <strong>1</strong> ficha a <strong>una</strong> categoría.</p>
-
-            <p>¡Se acabó el pelearse por quién ha dicho GITSTER primero, quién ha gritado más, quién se pone de portero porque el balón es suyo y si no le dejamos se vuelve a su casa y se lo lleva y blah, blah, blah!!</p>
-
-            <p>Aquí somos adictos al juego jugadores civilizados y, como tales, seguimos un <strong>orden fijo</strong> de apuestas.</p>
-
-            <ul>
-              <li>La ronda de apuestas <strong>empieza siempre</strong> por el jugador a la <strong>derecha del DJ</strong>.</li>
-              <li>En orden <strong>hacia la derecha</strong>, cada jugador puede pasar o <strong>apostar</strong> <strong>1</strong> ficha (“contra la banca”) a <strong>UNA SOLA</strong> categoría:</li>
+            <li><strong> &nbsp;EXPROPIAR UNA CARTA</strong> 🫳 &nbsp;
+                Pagando <strong>10</strong> fichas, el DJ puede descartar la carta que esté sonando y elegir a otro jugador. A continuación, puede examinar su Timeline y quedarse con la carta que más le convenga (la coloca en el lugar correspondiente de su propia Timeline)
+                En ese turno <strong>NO HABRÁ RONDA DE APUESTAS</strong> 🚫
+                <span class="muted"><strong>¡CUIDADÍN!</strong> Gastar 10 fichas supone que te quedas a 0, con lo que no puedes apostar y, por tanto, tardarás al menos una ronda en volver a ganar fichas 😱</span>
+              </li>
             </ul>
+          </div>
+        </div>
+      </details>
 
-            <ul>
-              <li><strong>Orden Cronológico</strong></li>
-              <li><strong>Título</strong></li>
-              <li><strong>Artista(s)</strong></li>
-              <li><strong>Año Exacto</strong></li>
-            </ul>
+      <details class="panel" id="sec-4">
+        <summary aria-label="Abrir sección 4) RONDA DE APUESTAS">
+          <span class="sum-title"><span class="kicker">4) RONDA DE APUESTAS</span> 🎰</span>
+          <span class="caret" aria-hidden="true">▾</span>
+        </summary>
+        <div class="panel__content">
+          <div class="content-inner">
+            <p>¡Se acabó el pelearse por quién ha dicho GITSTER primero, quién ha gritado más, quién se pone de portero porque el balón es suyo y si no le dejamos se vuelve a su casa y se lo lleva y blah, blah, blah!</p>
+            <p>Aquí somos <del>adictos al juego</del> jugadores civilizados y, como tales, seguimos un orden 🫡</p>
 
-            <div class="callout">
-              <h4>RESTRICCIÓN — ORDEN CRONOLÓGICO</h4>
-              <p>No puedes apostar a <strong>Orden Cronológico</strong> si vas <strong>ganando o empate</strong>. 👑</p>
+            <p>La ronda de apuestas comienza por el jugador que esté a la derecha del DJ ➡️</p>
+            <p>En sentido <strong>ANTIHORARIO</strong> (hacia la derecha), los jugadores pueden decidir:
+              <li><strong> &nbsp;PASAR</strong> 🤷‍♀️ &nbsp;</li>
+              <li><strong> &nbsp;PUTEAR AL DJ</strong> pagando <strong>5 fichas</strong> para que <strong>descarte</strong> la carta por la que está jugando en lugar de incorporarla a su Timeline (el descarte se produce después de revelar la carta y de cobrar/pagar las apuestas) 😈</li>
+              <li><strong> &nbsp;APOSTAR 1 ficha</strong> contra la banca a <strong>UNA SOLA</strong> de las siguientes categorías: Orden Cronológico, Título, Artista(s) O Año Exacto 🎰&nbsp;</li>
+
+            <div class="callout mag" role="note" aria-label="Nota PROHIBIDO REPETIR">
+              <p><strong style="color: rgba(255,43,214,.95)">PROHIBIDO REPETIR</strong> – Si un jugador anterior a ti (DJ incluido) ya ha apostado a una Zona de la Timeline (Orden Cronológico) a la que tú querías apostar o ha dicho un Título, Artista(s) o Año Exacto con el que tú querías apostar; pasas o apuestas a otra cosa
+                Resumiendo, <strong>TE JODES Y BAILAS</strong> (nunca mejor dicho) 🕺</p>
             </div>
 
-            <div class="callout mag">
-              <h4>PROHIBIDO REPETIR</h4>
-              <p>Si en el turno anterior apostaste a una categoría (ej: Título), en el siguiente turno <strong>NO PUEDES</strong> apostar a esa misma categoría. Resumiendo, <strong>TE JODES Y BAILAS</strong> (nunca mejor dicho) 🕺</p>
-            </div>
+            <div class="callout" role="note" aria-label="Nota VARIOUS ARTISTS">
+              <p><strong style="color: rgba(34,211,238,.95)">VARIOUS ARTISTS</strong> – A la hora de apostar a Artista(s), se puede nombrar a uno o a varios (para quitarle posibilidades de ganar ficha a los jugadores que van detrás de ti) 🖕<br/>; pero si nombras a varios artistas <strong>Y FALLAS UNO, PIERDES LA APUESTA</strong> ☠️
+              </p>
+            </div>    
+                        
+            <div class="callout" role="note" aria-label="Nota LEY DE LA VENTAJA II, ahora es personal">
+              <p><strong style="color: rgba(34,211,238,.95)">LEY DE LA VENTAJA II</strong>, ahora es personal – El (o los) jugadores que tenga(n) más cartas <strong>TAMPOCO PUEDE(N) APOSTAR A ORDEN CRONOLÓGICO</strong>, pero sí pueden <strong>PUTEAR AL DJ</strong>) ⚖️</p>
+            </div>      
+          </div>
+        </div>
+      </details>
 
-            <div class="callout">
-              <h4>VARIOUS ARTISTS</h4>
-              <p>Los jugadores que apuesten a Artista(s) pueden decir más de un artista, PERO: si fallan (al menos) uno, pierden la apuesta. 😈</p>
-            </div>
-</div>
-</div>
-</details>
-<details class="panel" id="sec-5">
-<summary aria-label="Abrir sección 5) RESOLUCIÓN DEL TURNO Y PAGOS DE APUESTAS">
-<span class="sum-title"><span class="kicker">5) RESOLUCIÓN DEL TURNO Y PAGOS DE APUESTAS</span> 💵</span>
-<span aria-hidden="true" class="caret">▾</span>
-</summary>
-<div class="panel__content">
-<div class="content-inner">
-<p class="tldr"><strong>TL;DR:</strong> Se <strong>revela</strong> la carta del DJ, se decide si se <strong>queda</strong> o se <strong>descarta</strong>, y luego se pagan las apuestas.</p>
-
-            <p>Se revela la carta del DJ:</p>
+      <details class="panel" id="sec-5">
+        <summary aria-label="Abrir sección 5) RESOLUCIÓN DEL TURNO Y PAGOS DE APUESTAS">
+          <span class="sum-title"><span class="kicker">5) RESOLUCIÓN DEL TURNO Y PAGOS DE APUESTAS</span> 💵</span>
+          <span class="caret" aria-hidden="true">▾</span>
+        </summary>
+        <div class="panel__content">
+          <div class="content-inner">
+            <p>Una vez han apostado todos los jugadores que no son el DJ, ya se puede dar la vuelta a la carta:</p>
             <ul>
-              <li>Si el DJ la colocó bien, gana la carta y se queda en su Timeline.</li>
-              <li>Si la colocó mal, se descarta.</li>
+              <li>Si el DJ la colocó bien en su Timeline, se la queda 👍</li>
+              <li>En caso contrario, se descarta, <strong>SALVO</strong> que alguien hubiese apostado al <strong>Orden Cronológico</strong> y haya acertado, en cuyo caso la coloca en el lugar correspondiente de su propia Timeline 😍</li>
             </ul>
 
-            <p>A continuación, siguiendo el orden de las apuestas (y empezando por el DJ), se cobran/pagan las fichas:</p>
-
-            <p><strong>Para el DJ</strong></p>
+            <p>A continuación, siguiendo el orden de las apuestas (y empezando por el DJ), se cobran/pagan las fichas correspondientes:</p>
             <ul>
-              <li>+1 si acertó <strong>Artista</strong></li>
-              <li>+1 si acertó <strong>Título</strong></li>
-              <li>+1 si acertó <strong>Año</strong> (máximo <strong>+3</strong>)</li>
+              <li>Para el DJ, <strong>SIEMPRE Y CUANDO HAYA COLOCADO BIEN LA CARTA EN SU TIMELINE</strong> (en caso contrario, no cobra): <span class="mono">+1</span> si acertó Artista, <span class="mono">+1</span> si acertó Título y <span class="mono">+1</span> si acertó Año (máximo <span class="mono">+ 3</span>) 💰💰💰</li>
+              <li>Para el resto de jugadores (apuestas contra la banca):</li>
             </ul>
 
-            <p><strong>Para el resto de jugadores</strong> (apuestas contra la banca)</p>
-            <ul>
+             <ul>
               <li>Si has acertado tu apuesta, coges fichas de la caja:
                 <ul>
-                  <li>Normal: <strong>+1</strong></li>
-                  <li><strong>Año Exacto</strong> (solo apuesta): <strong>+3</strong></li>
-                  <li><strong>Artista NO principal</strong> (solo apuesta): <strong>+3</strong></li>
+                  <li><strong>Título</strong>: <strong>+1</strong> 🙂</li> 
+                  <li><strong>Artista principal</strong>: <strong>+1</strong> 😊</li> 
+                  <li><strong>Artista NO principal</strong> (solo apuesta): <strong>+2</strong> 😄😁</li>
+                  <li><strong>Año Exacto</strong> (solo apuesta): <strong>+2</strong> 🤩🥳</li>
                 </ul>
               </li>
-              <li>Si has fallado tu apuesta, dejas <strong>1 ficha</strong> en la caja (<strong>-1</strong>).</li>
-              <li>Si has pasado (no has apostado), te quedas igual.</li>
+              <li>Si has fallado tu apuesta, dejas <strong>1 ficha</strong> en la caja (<strong>-1</strong>) 😭</li>
+              <li>Si has pasado (no has apostado), eres un cagao y te quedas igual 💩</li>
             </ul>
 
-            <div class="callout">
-              <h4>ARTISTAS PRINCIPALES</h4>
-              <p>Una canción puede tener <strong>1 o varios</strong> artistas principales. “Artista NO principal” = artista acreditado como invitado/feat/extra (según lo interpretéis en mesa).</p>
-            </div>
+            <div class="callout" role="note" aria-label="Nota TITULITIS">
+              <p><strong style="color: rgba(34,211,238,.95)">TITULITIS</strong> – Para que se dé por buena una apuesta de Título, hay que decirlo <strong>(casi) PERFECTO</strong>, con sus artículos, sus palabras pequeñitas y demás ☝️🤓 
+                Lo único que se puede permitir no decir son los "subtítulos" que van entre paréntesis. Ej.: Blue (Da Ba Dee) vale con "Blue" </p>
+            </div>  
+
+            <div class="callout" role="note" aria-label="Nota ARTISTAS PRINCIPALES">
+              <p><strong style="color: rgba(34,211,238,.95)">¿ARTISTA PRINCIPAL o FEATURING?</strong> – Una canción puede tener <strong>1 o varios</strong> artistas principales (Ej.: Las Bizarrap Sesions). “Artista NO principal” = artista acreditado como invitado/feat/extra (según lo interpretéis en mesa, yo me desentiendo) 🙈🙉🙊</p>
+
+            </div>  
 
             <div class="big-reminder">¡RECORDAD EL LÍMITE MÁXIMO DE 10 FICHAS!</div>
-</div>
-</div>
-</details>
-<details class="panel" id="sec-6">
-<summary aria-label="Abrir sección 6) FIN DE LA PARTIDA">
-<span class="sum-title"><span class="kicker">6) FIN DE LA PARTIDA</span> 🏁</span>
-<span aria-hidden="true" class="caret">▾</span>
-</summary>
-<div class="panel__content">
-<div class="content-inner">
-<p class="tldr"><strong>TL;DR:</strong> Se gana al final de la ronda cuando alguien tenga <strong>12+</strong> cartas y saque <strong>+2</strong> al siguiente.</p>
+          </div>
+        </div>
+      </details>
 
-            <p>Cuando alguien llegue a <strong>12</strong> cartas en su Timeline <strong>NO</strong> se acaba la partida.</p>
-            <p>Se termina al final de la ronda completa (para que todos tengan el mismo número de turnos).</p>
+      <details class="panel" id="sec-6">
+        <summary aria-label="Abrir sección 6) FIN DE LA PARTIDA">
+          <span class="sum-title"><span class="kicker">6) FIN DE LA PARTIDA</span> 🏁</span>
+          <span class="caret" aria-hidden="true">▾</span>
+        </summary>
+        <div class="panel__content">
+          <div class="content-inner">            
+            <p>Cuando alguien llegue a <strong>12</strong> cartas en su Timeline <strong>NO</strong> se acaba la partida 🤷‍♂️</p>
+            <p>Se termina al final de la ronda cuando alguien tenga <strong>12 (o más)</strong> cartas y saque <strong>+2</strong> al siguiente (hasta un máximo de 15) ↩️</p>
 
-            <div class="callout">
-              <h4>DIFERENCIA DE 2</h4>
-              <p>Para ganar, además de llegar a <strong>12</strong>, debes terminar con <strong>2</strong> cartas más que el siguiente.</p>
+            <div class="callout mag" role="note" aria-label="Nota EMPATE">
+              <p><strong style="color: rgba(255,43,214,.95)">EMPATE A 15</strong> - Gana quien tenga más fichas 💰💰💰💰💰💰💰💰💰💰</p>
             </div>
 
-            <div class="callout mag">
-              <h4>EMPATE</h4>
-              <p>Gana quien tenga más fichas 💰</p>
+            <div class="callout" role="note" aria-label="Nota EMPATE A FICHAS">
+              <p><strong style="color: rgba(34,211,238,.95)">EMPATE A FICHAS</strong> 😱 - Si sigue el empate: <strong>MUERTE SÚBITA</strong> ☠️<br/>
+                Los empatados juegan <strong>1</strong> turno cada uno (en el orden normal) y gana el primero que consiga <strong>+1 carta</strong> (<strong>SIN COMPRAR</strong>). Si ambos la consiguen en la misma ronda: gana quien termine con más fichas.
+              </p>
+            </div>
+          </div>
+        </div>
+      </details>
+
+<details id="cheatsheet" class="panel featured">
+        <summary aria-label="Abrir sección CHEATSHEET">
+          <span class="sum-title"><span class="kicker">CHEATSHEET</span> 🧠</span>
+          <span class="caret" aria-hidden="true">▾</span>
+        </summary>
+        <div class="panel__content">
+          <div class="content-inner">
+            <ul>
+              <li>Empieza el de la canción más antigua y el Marcador de Prioridad de Apuestas empieza a su derecha ▶️</li>
+              <li>Fichas iniciales: <span class="mono">3</span> 💰💰💰</li>
+              <li>Límite de fichas: <span class="mono">10</span> ⚠️</li>
+              <li>La canción se puede escuchar hasta el estribillo (incluido) ⏳</li>
+              <li>Re-roll: cuesta <span class="mono">1</span> ficha y se puede hacer sólo una vez por turno 🎲</li>
+              <li>Coste de comprar cartas: <span class="mono">5 / 6 / 7…</span> 💸</li>
+              <li><strong>NO SE PUEDE COMPRAR</strong> si vas primero (ni empatado primero) 👑⛔</li>
+              <li>Apuestas en orden y en sentido antihorario (a la derecha): <span class="mono">1</span> ficha, <span class="mono">1</span> categoría, y sin repetir elección 🚫🎰</li>
+              <li>Si fallas (al menos) un artista, pierdes la apuesta ☠️</li>
+              <li>El puesto de DJ rota a la derecha al acabar un turno ➡️</li>
+              <li>El Marcador de Prioridad de Apuestas rota uno (o más) puestos en sentido antihorario 🔄🔄</li>
+              <li>Se gana al llegar a <span class="mono">15</span> cartas en la Timeline <strong>AL FINAL DE LA RONDA</strong> ↩️</li>
+            </ul>
+          </div>
+        </div>
+      </details>
+
+
+      <details class="panel" id="fuck">
+        <summary aria-label="Abrir sección FUCK (Frequently Usked CKuestions)">
+          <span class="sum-title"><span class="kicker">FUCK (Frequently Usked CKuestions)</span> 🙋‍♀️</span>
+          <span class="caret" aria-hidden="true">▾</span>
+        </summary>
+        <div class="panel__content">
+          <div class="content-inner faq">
+
+            <div class="callout mag" role="note" aria-label="FAQ Jugadores y equipos">
+              <h4>¿Para cuántos jugadores es? ¿Se puede jugar en equipos?</h4>
+              <p>GITSTER es un juego pensado para 4-7 jugadores 🚶‍♂️🚶‍♀️🚶🚶‍♂️+🚶‍♀️🚶🚶‍♂️</p>
+              <p>Pero tranquilidad Míster Sociable / Miss Popularidad 😎, que si sois +8 jugadores, podéis jugar en equipos, aunque tendréis que consensuar las decisiones de la Timeline y de las Apuestas 🤝</p>
+              <ul>
+                <li>8 jugadores = 4 parejas 🧑‍🤝‍🧑🧑‍🤝‍🧑🧑‍🤝‍🧑🧑‍🤝‍🧑</li>
+                <li>9 jugadores = 3 tríos 👪👪👪 ó 3 parejas + 1 trío 🧑‍🤝‍🧑🧑‍🤝‍🧑🧑‍🤝‍🧑👪</li>
+                <li>10 jugadores = 5 parejas 🧑‍🤝‍🧑🧑‍🤝‍🧑🧑‍🤝‍🧑🧑‍🤝‍🧑🧑‍🤝‍🧑</li>
+                <li>11 jugadores = 3 tríos + 1 pareja 👪👪👪🧑‍🤝‍🧑</li>
+                <li>12 jugadores = 4 tríos 👪👪👪👪</li>
+              </ul>
+              <p>Y no os ponemos más ejemplos porque creemos que lo habéis pillado (y porque sabemos que nadie tiene más de 12 amigos, tampoco os flipéis tanto)</p>
             </div>
 
-            <div class="callout">
-              <h4>EMPATE A FICHAS</h4>
-              <p>Si sigue el empate: <strong>MUERTE SÚBITA</strong> ☠️</p>
-              <p>Los empatados juegan <strong>1</strong> turno cada uno (en el orden normal) y gana el primero que consiga <strong>+1</strong> carta (<strong>SIN COMPRAR</strong>). Si ambos la consiguen en la misma ronda: gana quien termine con más fichas.</p>
+            <div class="callout" role="note" aria-label="FAQ Comprar cartas">
+              <h4>¿Para qué sirve comprar cartas?</h4>
+              <p>Comprar cartas es una forma de gastar las fichas de apuesta que has conseguido. 🤑</p>
+              <p><strong>⚠️ ¡Recuerda que no puedes acumular más de 10! 👀</strong></p>
+              <p>Además, esto es un mecanismo que te permite alcanzar a los jugadores más aventajados de la partida si no te ha ido muy bien y te has quedado atrás 📉🚀</p>
             </div>
-</div>
-</div>
-</details>
-<details class="panel featured" id="cheatsheet">
-<summary aria-label="Abrir sección CHEATSHEET">
-<span class="sum-title"><span class="kicker">CHEATSHEET</span> 🧠</span>
-<span aria-hidden="true" class="caret">▾</span>
-</summary>
-<div class="panel__content">
-<div class="content-inner">
-<p class="lead"><strong>Recordatorio</strong> para jugar sin mirar el PDF cada turno 👀</p>
 
-            <p><strong>Setup</strong></p>
-            <ul>
-              <li>Empieza el de la canción más antigua. En apuestas, empieza siempre el jugador a la <strong>derecha del DJ</strong>.</li>
-              <li>Fichas iniciales: <strong>3</strong> | Límite de fichas: <strong>10</strong>.</li>
-            </ul>
+          </div>
+        </div>
+      </details>
 
-            <p><strong>Turno</strong></p>
-            <ul>
-              <li>La canción se escucha hasta el <strong>estribillo (incluido)</strong>.</li>
-              <li>Re-roll: <strong>1º</strong> = <strong>1</strong>, <strong>2º</strong> = <strong>2</strong>, <strong>3º</strong> = <strong>3</strong>…</li>
-              <li>Comprar carta: cuesta <strong>3</strong>, <strong>NO</strong> se puede comprar si vas primero (ni empatado primero). Además, si compras, <strong>no hay apuestas</strong>.</li>
-              <li>El puesto de DJ rota a la derecha al final de cada turno.</li>
-            </ul>
+    </section>
+  </main>
 
-            <p><strong>Apuestas + Victoria</strong></p>
-            <ul>
-              <li>En apuestas, empieza siempre el jugador a la <strong>derecha del DJ</strong>.</li>
-              <li>No puedes apostar a <strong>Orden Cronológico</strong> si vas ganando o empate.</li>
-              <li>Apuesta acertada: normal <strong>+1</strong> | Año exacto <strong>+3</strong> | Artista NO principal <strong>+3</strong>.</li>
-              <li>Si fallas (al menos) un artista, pierdes la apuesta.</li>
-              <li>La partida termina al final de la ronda: <strong>12+</strong> cartas y <strong>+2</strong> al siguiente.</li>
-            </ul>
-</div>
-</div>
-</details>
-<details class="panel" id="fuck">
-<summary aria-label="Abrir sección FUCK (Frequently Usked CKuestions)">
-<span class="sum-title"><span class="kicker">FUCK (Frequently Usked CKuestions)</span> 🙋‍♀️</span>
-<span aria-hidden="true" class="caret">▾</span>
-</summary>
-<div class="panel__content">
-<div class="content-inner faq">
-<div aria-label="FAQ Jugadores y equipos" class="callout mag" role="note">
-<h4>¿Para cuántos jugadores es? ¿Se puede jugar en equipos?</h4>
-<p>GITSTER es un juego pensado para 4-7 jugadores 🚶‍♂️🚶‍♀️🚶🚶‍♂️+🚶‍♀️🚶🚶‍♂️</p>
-<p>Pero tranquilidad Míster Sociable / Miss Popularidad 😎, que si sois +8 jugadores, podéis jugar en equipos, aunque tendréis que consensuar las decisiones de la Timeline y de las Apuestas 🤝</p>
-<ul>
-<li>8 jugadores = 4 parejas 🧑‍🤝‍🧑🧑‍🤝‍🧑🧑‍🤝‍🧑🧑‍🤝‍🧑</li>
-<li>9 jugadores = 3 tríos 👪👪👪 ó 3 parejas + 1 trío 🧑‍🤝‍🧑🧑‍🤝‍🧑🧑‍🤝‍🧑👪</li>
-<li>10 jugadores = 5 parejas 🧑‍🤝‍🧑🧑‍🤝‍🧑🧑‍🤝‍🧑🧑‍🤝‍🧑🧑‍🤝‍🧑</li>
-<li>11 jugadores = 3 tríos + 1 pareja 👪👪👪🧑‍🤝‍🧑</li>
-<li>12 jugadores = 4 tríos 👪👪👪👪</li>
-</ul>
-<p>Y no os ponemos más ejemplos porque creemos que lo habéis pillado (y porque sabemos que nadie tiene más de 12 amigos, tampoco os flipéis tanto)</p>
-</div>
-<div aria-label="FAQ Comprar cartas" class="callout" role="note">
-<h4>¿Para qué sirve comprar cartas?</h4>
-<p>Comprar cartas es una forma de gastar las fichas de apuesta que has conseguido. 🤑</p>
-<p><strong>⚠️ ¡Recuerda que no puedes acumular más de 10! 👀</strong></p>
-<p>Además, esto es un mecanismo que te permite alcanzar a los jugadores más aventajados de la partida si no te ha ido muy bien y te has quedado atrás 📉🚀</p>
-</div>
-</div>
-</div>
-</details>
-</section>
-</main>
-<a aria-label="Ir a CHEATSHEET" class="fab" href="#cheatsheet" id="cheatsheetFab">Cheatsheet</a>
-<script>
+  <a class="fab" id="cheatsheetFab" href="#cheatsheet" aria-label="Ir a CHEATSHEET">Cheatsheet</a>
+
+  <script>
 (() => {
   const panels = Array.from(document.querySelectorAll('details.panel'));
   const DURATION = 280; // debe coincidir con el CSS (transition)
