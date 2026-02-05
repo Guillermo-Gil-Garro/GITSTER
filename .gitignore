@@ -212,5 +212,6 @@ __marimo__/
 pipeline/data/
 *.csv
 *.parquet
+*.json
 
 
