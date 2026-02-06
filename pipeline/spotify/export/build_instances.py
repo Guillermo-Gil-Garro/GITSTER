@@ -11,7 +11,7 @@ MANUAL_DIR = Path("pipeline/manual")
 
 def find_input_csv(owner: str) -> Path:
     # Preferimos el output por owner, si existe
-    preferred = PROCESSED_DIR / f"spotify_liked_songs_from_export__{owner}.csv"
+    preferred = PROCESSED_DIR / f"spotify_liked_songs_from_export_{owner}.csv"
     if preferred.exists():
         return preferred
 
@@ -74,7 +74,7 @@ def main():
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     MANUAL_DIR.mkdir(parents=True, exist_ok=True)
 
-    out_path = PROCESSED_DIR / f"instances_{expansion}__{owner}.csv"
+    out_path = PROCESSED_DIR / f"instances_{expansion}_{owner}.csv"
     out.to_csv(out_path, index=False, encoding="utf-8")
 
     # Mini QC report (CSV sencillo)
@@ -85,7 +85,7 @@ def main():
         "missing_track_id": [(out["track_id"] == "").sum()],
         "missing_year": [(out["year"] == "").sum()],
     }
-    qc_path = REPORTS_DIR / f"qc_instances_{expansion}__{owner}.csv"
+    qc_path = REPORTS_DIR / f"qc_instances_{expansion}_{owner}.csv"
     pd.DataFrame(qc).to_csv(qc_path, index=False, encoding="utf-8")
 
     # Stub de merges manuales (para el futuro)

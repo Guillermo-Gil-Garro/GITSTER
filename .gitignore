@@ -213,5 +213,5 @@ pipeline/data/
 *.csv
 *.parquet
 *.json
-
-
+pipeline/cache/
+pipeline/reports/
