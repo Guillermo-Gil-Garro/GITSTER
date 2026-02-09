@@ -7,9 +7,12 @@ import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.keyframes
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,13 +21,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -38,12 +41,19 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
@@ -218,7 +228,6 @@ private fun HomeScreen(
     onRules: () -> Unit
 ) {
     val shapeLg = RoundedCornerShape(20.dp)
-    val shapePill = RoundedCornerShape(999.dp)
 
     Box(modifier = Modifier.fillMaxSize()) {
         Image(
@@ -233,9 +242,9 @@ private fun HomeScreen(
                 .fillMaxSize()
                 .background(
                     Brush.verticalGradient(
-                        0f to Color(0x88060814),
-                        0.55f to Color(0x99060814),
-                        1f to Color(0xBB060814)
+                        0f to Color(0x66060814),
+                        0.55f to Color(0x77060814),
+                        1f to Color(0x99060814)
                     )
                 )
         )
@@ -245,15 +254,23 @@ private fun HomeScreen(
                 .fillMaxSize()
                 .safeDrawingPadding()
                 .padding(horizontal = 18.dp, vertical = 16.dp),
-            verticalArrangement = Arrangement.Center,
+            verticalArrangement = Arrangement.Top,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                Spacer(Modifier.height(6.dp))
+            Column(
+                Modifier.fillMaxWidth().weight(1f),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Spacer(Modifier.height(2.dp))
                 NeonFlickerLogo(modifier = Modifier.fillMaxWidth())
+                Box(
+                    modifier = Modifier.fillMaxWidth().weight(1f),
+                    contentAlignment = Alignment.Center
+                ) {
+                    HomeQrHero()
+                }
 
-                Spacer(Modifier.height(18.dp))
-
+                Spacer(Modifier.height(8.dp))
                 Button(
                     onClick = onPlayNow,
                     modifier = Modifier.fillMaxWidth().height(58.dp),
@@ -272,20 +289,153 @@ private fun HomeScreen(
 
                 Spacer(Modifier.height(12.dp))
 
-                OutlinedButton(
+                Button(
                     onClick = onRules,
-                    shape = shapePill,
-                    modifier = Modifier.fillMaxWidth().height(40.dp),
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = MaterialTheme.colorScheme.primary
-                    ),
-                    border = androidx.compose.foundation.BorderStroke(
-                        1.dp,
-                        MaterialTheme.colorScheme.primary
+                    modifier = Modifier.fillMaxWidth().height(58.dp),
+                    shape = shapeLg,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = Color.Black
                     )
                 ) {
-                    Text("REGLAS", fontWeight = FontWeight.SemiBold)
+                    Text(
+                        "REGLAS",
+                        fontWeight = FontWeight.Black,
+                        style = MaterialTheme.typography.titleMedium
+                    )
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun HomeQrHero() {
+    val haptic = LocalHapticFeedback.current
+    val qrSize = 184.dp
+    val cardPadding = 12.dp
+    val ringSize = 260.dp
+
+    Box(
+        modifier = Modifier.size(ringSize),
+        contentAlignment = Alignment.Center
+    ) {
+        NeonQrRing(
+            modifier = Modifier
+                .matchParentSize()
+        )
+
+        Box(
+            modifier = Modifier
+                .clip(RoundedCornerShape(14.dp))
+                .background(Color(0xFFFDFDFD))
+                .padding(cardPadding)
+                .clickable {
+                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                },
+            contentAlignment = Alignment.Center
+        ) {
+            Image(
+                painter = painterResource(id = R.drawable.qr_home),
+                contentDescription = "QR Home",
+                modifier = Modifier.size(qrSize),
+                contentScale = ContentScale.Fit
+            )
+        }
+    }
+}
+
+@Composable
+private fun NeonQrRing(modifier: Modifier = Modifier) {
+    val infinite = rememberInfiniteTransition(label = "qr_neon_ring")
+    val rotation by infinite.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 7000),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "qr_ring_rotation"
+    )
+    val pulse by infinite.animateFloat(
+        initialValue = 0.98f,
+        targetValue = 1.03f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 3000),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "qr_ring_pulse"
+    )
+
+    val neonColors = listOf(
+        Color(0xFFFF4FCB),
+        Color(0xFF26C6FF),
+        Color(0xFFFF9E2C),
+        Color(0xFFFFE45E)
+    )
+
+    Canvas(
+        modifier = modifier.graphicsLayer(
+            scaleX = pulse,
+            scaleY = pulse,
+            alpha = 0.95f
+        )
+    ) {
+        val strokeOuter = size.minDimension * 0.11f
+        val strokeMid = size.minDimension * 0.075f
+        val strokeInner = size.minDimension * 0.042f
+        val insetOuter = strokeOuter * 0.8f
+        val insetMid = strokeMid * 0.9f
+        val insetInner = strokeInner * 1.0f
+
+        val sweeps = listOf(54f, 42f, 50f, 46f)
+        val gaps = listOf(34f, 28f, 32f, 30f)
+        var start = -90f
+
+        rotate(rotation) {
+            for (i in neonColors.indices) {
+                val color = neonColors[i]
+                val sweep = sweeps[i]
+                val gap = gaps[i]
+
+                drawArc(
+                    color = color.copy(alpha = 0.22f),
+                    startAngle = start,
+                    sweepAngle = sweep,
+                    useCenter = false,
+                    topLeft = androidx.compose.ui.geometry.Offset(insetOuter, insetOuter),
+                    size = androidx.compose.ui.geometry.Size(
+                        width = size.width - insetOuter * 2f,
+                        height = size.height - insetOuter * 2f
+                    ),
+                    style = Stroke(width = strokeOuter, cap = StrokeCap.Round)
+                )
+                drawArc(
+                    color = color.copy(alpha = 0.42f),
+                    startAngle = start,
+                    sweepAngle = sweep,
+                    useCenter = false,
+                    topLeft = androidx.compose.ui.geometry.Offset(insetMid, insetMid),
+                    size = androidx.compose.ui.geometry.Size(
+                        width = size.width - insetMid * 2f,
+                        height = size.height - insetMid * 2f
+                    ),
+                    style = Stroke(width = strokeMid, cap = StrokeCap.Round)
+                )
+                drawArc(
+                    color = color.copy(alpha = 0.95f),
+                    startAngle = start,
+                    sweepAngle = sweep,
+                    useCenter = false,
+                    topLeft = androidx.compose.ui.geometry.Offset(insetInner, insetInner),
+                    size = androidx.compose.ui.geometry.Size(
+                        width = size.width - insetInner * 2f,
+                        height = size.height - insetInner * 2f
+                    ),
+                    style = Stroke(width = strokeInner, cap = StrokeCap.Round)
+                )
+
+                start += sweep + gap
             }
         }
     }
@@ -299,35 +449,51 @@ private fun NeonFlickerLogo(modifier: Modifier = Modifier) {
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
             animation = keyframes {
-                durationMillis = 2600
+                durationMillis = 9000
                 1f at 0
-                0.72f at 70
-                1f at 140
-                0.86f at 520
-                1f at 620
-                0.62f at 1540
-                1f at 1640
-                0.9f at 2140
-                1f at 2220
-                1f at 2600
+                0.86f at 1800
+                1f at 1940
+                0.74f at 5300
+                1f at 5420
+                0.82f at 5560
+                1f at 5700
+                1f at 9000
             },
             repeatMode = RepeatMode.Restart
         ),
         label = "logo_alpha"
     )
 
-    Image(
-        painter = painterResource(id = R.drawable.gitster_logo),
-        contentDescription = "GITSTER",
-        modifier = modifier
-            .padding(horizontal = 10.dp)
-            .graphicsLayer(
-                alpha = alpha,
-                scaleX = 1f - (1f - alpha) * 0.02f,
-                scaleY = 1f - (1f - alpha) * 0.02f
-            ),
-        contentScale = ContentScale.Fit
-    )
+    Box(modifier = modifier, contentAlignment = Alignment.Center) {
+        Image(
+            painter = painterResource(id = R.drawable.gitster_logo),
+            contentDescription = null,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 10.dp)
+                .graphicsLayer(
+                    alpha = 0.26f * alpha,
+                    scaleX = 1.03f,
+                    scaleY = 1.03f
+                )
+                .blur(12.dp),
+            contentScale = ContentScale.Fit
+        )
+
+        Image(
+            painter = painterResource(id = R.drawable.gitster_logo),
+            contentDescription = "GITSTER",
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 10.dp)
+                .graphicsLayer(
+                    alpha = alpha,
+                    scaleX = 1f - (1f - alpha) * 0.01f,
+                    scaleY = 1f - (1f - alpha) * 0.01f
+                ),
+            contentScale = ContentScale.Fit
+        )
+    }
 }
 
 private fun bestSpotifyUriString(res: ScanResolution, card: DeckCard?): String? {
