@@ -1,121 +1,244 @@
 import argparse
 import hashlib
+from collections import Counter
 from datetime import datetime
 from pathlib import Path
+from typing import Dict, Tuple, List
 
 import pandas as pd
 
-PROCESSED_DIR = Path("pipeline/data/processed")
-REGISTRY_DIR = Path("pipeline/registry")
-MANUAL_DIR = Path("pipeline/manual")
+
+def repo_root() -> Path:
+    # .../pipeline/canonicalize/canonicalize_and_registry.py -> parents[2] = repo root
+    return Path(__file__).resolve().parents[2]
 
 
-def stable_hash_id(s: str, n: int = 16) -> str:
-    return hashlib.sha1(s.encode("utf-8")).hexdigest()[:n]
+ROOT = repo_root()
+PROCESSED_DIR = ROOT / "pipeline" / "data" / "processed"
+REPORTS_DIR = ROOT / "pipeline" / "reports"
+MANUAL_DIR = ROOT / "pipeline" / "manual"
+REGISTRY_DIR = ROOT / "pipeline" / "registry"
+
+MANUAL_MERGES_PATH = MANUAL_DIR / "manual_merges.csv"
+REGISTRY_PATH = REGISTRY_DIR / "canonical_registry.csv"
 
 
-def load_manual_merges() -> pd.DataFrame:
-    path = MANUAL_DIR / "manual_merges.csv"
-    if not path.exists():
-        return pd.DataFrame(
-            columns=[
-                "alias_title_trim",
-                "alias_artists_trim",
-                "canonical_id_target",
-                "note",
-            ]
-        )
-    df = pd.read_csv(path).fillna("")
-    # Normalizamos trims por seguridad (sin tocar raw)
-    df["alias_title_trim"] = df["alias_title_trim"].astype(str).str.strip()
-    df["alias_artists_trim"] = df["alias_artists_trim"].astype(str).str.strip()
-    df["canonical_id_target"] = df["canonical_id_target"].astype(str).str.strip()
-    return df
+def norm(s: str) -> str:
+    s = "" if s is None else str(s)
+    s = s.strip()
+    s = " ".join(s.split())
+    return s
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--owner", default="Guille")
-    ap.add_argument("--expansion", default="I")
-    ap.add_argument(
-        "--processed-month", default=None, help="YYYY-MM (si no, usa mes actual)"
-    )
-    args = ap.parse_args()
+def norm_key(artists_trim: str, title_trim: str) -> str:
+    # Normalización estable para hashing y matching de merges manuales
+    return f"{norm(artists_trim).lower()} | {norm(title_trim).lower()}"
 
-    owner = args.owner
-    expansion = args.expansion
-    processed_month = args.processed_month or datetime.now().strftime("%Y-%m")
 
-    in_path = PROCESSED_DIR / f"instances_{expansion}__{owner}.csv"
+def canonical_id_from_key(key_norm: str) -> str:
+    # 16 hex (compatible con ids existentes en el repo)
+    return hashlib.md5(key_norm.encode("utf-8")).hexdigest()[:16]
+
+
+def list_owners_from_instances(expansion: str) -> List[str]:
+    pattern = f"instances_{expansion}_*.csv"
+    files = sorted(PROCESSED_DIR.glob(pattern))
+    owners: List[str] = []
+    prefix = f"instances_{expansion}_"
+    for f in files:
+        stem = f.stem  # instances_I_Guille
+        if not stem.startswith(prefix):
+            continue
+        owner = stem[len(prefix):]
+        owners.append(owner)
+    # dedup manteniendo orden
+    seen = set()
+    out = []
+    for o in owners:
+        if o not in seen:
+            seen.add(o)
+            out.append(o)
+    return out
+
+
+def load_manual_merges() -> Dict[str, str]:
+    """
+    manual_merges.csv:
+      alias_title_trim, alias_artists_trim, canonical_id_target, note
+    """
+    if not MANUAL_MERGES_PATH.exists():
+        return {}
+    df = pd.read_csv(MANUAL_MERGES_PATH).fillna("")
+    if df.empty:
+        return {}
+    required = {"alias_title_trim", "alias_artists_trim", "canonical_id_target"}
+    if not required.issubset(set(df.columns)):
+        raise ValueError(f"manual_merges.csv debe tener columnas {sorted(required)}")
+    mapping: Dict[str, str] = {}
+    for r in df.itertuples(index=False):
+        k = norm_key(getattr(r, "alias_artists_trim", ""), getattr(r, "alias_title_trim", ""))
+        tgt = norm(getattr(r, "canonical_id_target", ""))
+        if not k or not tgt:
+            continue
+        mapping[k] = tgt
+    return mapping
+
+
+def choose_mode(values: List[str]) -> str:
+    vals = [norm(v) for v in values if norm(v)]
+    if not vals:
+        return ""
+    c = Counter(vals)
+    # mode; tie-break: lexicográfico
+    top = max(c.values())
+    best = sorted([v for v, n in c.items() if n == top])[0]
+    return best
+
+
+def update_registry(canonical_ids: List[str], expansion: str, added_month: str) -> None:
+    REGISTRY_DIR.mkdir(parents=True, exist_ok=True)
+    if REGISTRY_PATH.exists():
+        reg = pd.read_csv(REGISTRY_PATH).fillna("")
+    else:
+        reg = pd.DataFrame(columns=["canonical_id", "expansion_code", "added_month"])
+
+    reg_cols = set(reg.columns)
+    required = {"canonical_id", "expansion_code", "added_month"}
+    if not required.issubset(reg_cols):
+        # No rompemos: re-creamos con required + lo que hubiera
+        reg = reg[[c for c in reg.columns if c in required]].copy()
+
+    existing = set(reg.loc[reg["expansion_code"] == expansion, "canonical_id"].astype(str))
+    new_rows = []
+    for cid in canonical_ids:
+        cid = norm(cid)
+        if not cid or cid in existing:
+            continue
+        new_rows.append({"canonical_id": cid, "expansion_code": expansion, "added_month": added_month})
+
+    if new_rows:
+        reg = pd.concat([reg, pd.DataFrame(new_rows)], ignore_index=True)
+
+    reg.to_csv(REGISTRY_PATH, index=False)
+
+
+def canonicalize_owner(owner: str, expansion: str, merges: Dict[str, str]) -> pd.DataFrame:
+    in_path = PROCESSED_DIR / f"instances_{expansion}_{owner}.csv"
     if not in_path.exists():
         raise FileNotFoundError(f"No existe: {in_path}")
 
     df = pd.read_csv(in_path).fillna("")
-    # Clave exacta (con trims) según decisión: auto-merge SOLO por match exacto
-    df["title_trim"] = df["title_trim"].astype(str).str.strip()
-    df["artists_trim"] = df["artists_trim"].astype(str).str.strip()
-    df["canonical_key"] = df["artists_trim"] + " | " + df["title_trim"]
+    # columnas mínimas esperadas del build_instances.py
+    needed = {"owner_label", "title_trim", "artists_trim"}
+    if not needed.issubset(set(df.columns)):
+        raise ValueError(f"{in_path.name} debe tener columnas al menos: {sorted(needed)}")
 
-    # Canonical id por hash estable de canonical_key
-    df["canonical_id"] = df["canonical_key"].apply(lambda x: stable_hash_id(x, 16))
+    # Canonical key visible (mantén case trim original)
+    df["canonical_key"] = df["artists_trim"].astype(str).apply(norm) + " | " + df["title_trim"].astype(str).apply(norm)
 
-    # Aplicar merges manuales (si existen): alias_title_trim+alias_artists_trim -> canonical_id_target
-    merges = load_manual_merges()
-    if len(merges) > 0:
-        alias_key = merges["alias_artists_trim"] + " | " + merges["alias_title_trim"]
-        alias_map = dict(zip(alias_key, merges["canonical_id_target"]))
+    # Canonical id estable (hash del key normalizado)
+    key_norm = df.apply(lambda r: norm_key(r.get("artists_trim", ""), r.get("title_trim", "")), axis=1)
+    df["canonical_id"] = key_norm.apply(canonical_id_from_key)
 
-        # solo sobreescribimos si hay canonical_id_target no vacío
-        def apply_override(row):
-            k = row["canonical_key"]
-            target = alias_map.get(k, "")
-            return target if target else row["canonical_id"]
+    # merges manuales (por alias)
+    if merges:
+        mask = key_norm.isin(merges.keys())
+        if mask.any():
+            df.loc[mask, "canonical_id"] = key_norm[mask].map(merges)
 
-        df["canonical_id"] = df.apply(apply_override, axis=1)
+    # orden columnas: añade al final si ya existe estructura
+    # (no forzamos un schema rígido para no romper downstream)
+    return df
 
-    # canonical_songs: únicos por canonical_id (tomamos title/artists trim como canon)
-    canonical = (
-        df[["canonical_id", "title_trim", "artists_trim"]]
-        .drop_duplicates(subset=["canonical_id"])
-        .rename(columns={"title_trim": "title_canon", "artists_trim": "artists_canon"})
-        .copy()
-    )
-    canonical["year"] = ""  # se rellenará por enriquecimiento externo
-    canonical["first_seen_expansion"] = expansion
-    canonical["first_seen_month"] = processed_month
 
-    # Guardar outputs
+def build_canonical_songs(linked_all: pd.DataFrame, expansion: str) -> pd.DataFrame:
+    # Preferimos title_trim/artists_trim como canon
+    if "title_trim" not in linked_all.columns or "artists_trim" not in linked_all.columns:
+        raise ValueError("linked instances deben incluir title_trim y artists_trim para construir canonical_songs")
+
+    g = linked_all.groupby("canonical_id", dropna=False)
+
+    rows = []
+    for cid, sub in g:
+        title_c = choose_mode(sub["title_trim"].astype(str).tolist())
+        artists_c = choose_mode(sub["artists_trim"].astype(str).tolist())
+        rows.append({
+            "canonical_id": cid,
+            "title_canon": title_c,
+            "artists_canon": artists_c,
+            "year": "",
+            "year_source": "",
+            "year_confidence": "",
+            "year_note": "",
+        })
+
+    out = pd.DataFrame(rows)
+    out.insert(0, "expansion_code", expansion)
+    return out.sort_values(["artists_canon", "title_canon"]).reset_index(drop=True)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--owner", help="Procesa un owner específico (si no se indica, procesa todos los instances_{EXP}_*.csv)", default=None)
+    parser.add_argument("--expansion", required=True, help="Código de expansión (ej: I)")
+    parser.add_argument("--processed-month", default=None, help="YYYY-MM (si no, se infiere del CSV o se usa mes actual)")
+
+    args = parser.parse_args()
+    expansion = args.expansion
+
     PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
-    REGISTRY_DIR.mkdir(parents=True, exist_ok=True)
+    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
-    canonical_path = PROCESSED_DIR / f"canonical_songs_{expansion}.csv"
-    linked_path = PROCESSED_DIR / f"instances_linked_{expansion}__{owner}.csv"
-    registry_path = REGISTRY_DIR / "canonical_registry.csv"
+    owners = [args.owner] if args.owner else list_owners_from_instances(expansion)
+    if not owners:
+        raise FileNotFoundError(f"No encuentro instances_{expansion}_*.csv en {PROCESSED_DIR}")
 
-    canonical.to_csv(canonical_path, index=False, encoding="utf-8")
-    df.to_csv(linked_path, index=False, encoding="utf-8")
+    merges = load_manual_merges()
 
-    # Actualizar registry (append sin duplicar canonical_id)
-    if registry_path.exists():
-        reg = pd.read_csv(registry_path).fillna("")
-    else:
-        reg = pd.DataFrame(columns=["canonical_id", "expansion_code", "added_month"])
+    linked_frames = []
+    processed_month = args.processed_month
 
-    new_reg = pd.DataFrame(
-        {
-            "canonical_id": canonical["canonical_id"],
-            "expansion_code": expansion,
-            "added_month": processed_month,
-        }
-    )
+    for owner in owners:
+        linked = canonicalize_owner(owner, expansion, merges)
+        # infer processed_month si no se pasó
+        if not processed_month:
+            if "processed_month" in linked.columns:
+                vals = sorted({norm(v) for v in linked["processed_month"].tolist() if norm(v)})
+                if len(vals) == 1:
+                    processed_month = vals[0]
+                elif len(vals) > 1:
+                    processed_month = max(vals)
+        linked_out = PROCESSED_DIR / f"instances_linked_{expansion}_{owner}.csv"
+        linked.to_csv(linked_out, index=False)
+        print(f"OK linked -> {linked_out}")
 
-    reg_all = pd.concat([reg, new_reg], ignore_index=True)
-    reg_all = reg_all.drop_duplicates(subset=["canonical_id"], keep="first")
-    reg_all.to_csv(registry_path, index=False, encoding="utf-8")
+        linked_frames.append(linked)
 
-    print(f"OK canonical -> {canonical_path} ({len(canonical)} songs)")
-    print(f"OK linked -> {linked_path} ({len(df)} instances)")
-    print(f"OK registry -> {registry_path} ({len(reg_all)} total unique songs)")
+    if not processed_month:
+        processed_month = datetime.now().strftime("%Y-%m")
+
+    linked_all = pd.concat(linked_frames, ignore_index=True)
+    canonical_songs = build_canonical_songs(linked_all, expansion)
+    canon_out = PROCESSED_DIR / f"canonical_songs_{expansion}.csv"
+    canonical_songs.to_csv(canon_out, index=False)
+    print(f"OK canonical_songs -> {canon_out}")
+
+    # QC básico
+    qc = pd.DataFrame({
+        "expansion": [expansion],
+        "owners": [", ".join(owners)],
+        "n_instances": [len(linked_all)],
+        "n_canonical": [linked_all["canonical_id"].nunique()],
+        "processed_month": [processed_month],
+        "n_manual_merges": [len(merges)],
+    })
+    qc_out = REPORTS_DIR / f"qc_canonicalize_{expansion}.csv"
+    qc.to_csv(qc_out, index=False)
+    print(f"OK qc -> {qc_out}")
+
+    # registry
+    update_registry(sorted(linked_all["canonical_id"].unique().tolist()), expansion, processed_month)
+    print(f"OK registry -> {REGISTRY_PATH}")
 
 
 if __name__ == "__main__":

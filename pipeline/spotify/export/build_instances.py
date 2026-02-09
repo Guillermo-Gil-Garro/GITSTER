@@ -7,38 +7,42 @@ import pandas as pd
 PROCESSED_DIR = Path("pipeline/data/processed")
 REPORTS_DIR = Path("pipeline/reports")
 MANUAL_DIR = Path("pipeline/manual")
+RAW_DIR = Path("pipeline/data/raw/spotify_export")
 
 
 def find_input_csv(owner: str) -> Path:
-    # Preferimos el output por owner, si existe
-    preferred = PROCESSED_DIR / f"spotify_liked_songs_from_export_{owner}.csv"
-    if preferred.exists():
-        return preferred
-
-    # Fallback al genérico (por si se generó antes)
-    generic = PROCESSED_DIR / "spotify_liked_songs_from_export.csv"
-    if generic.exists():
-        return generic
+    """
+    Compatibilidad:
+    - Nuevo: spotify_liked_songs_from_export_<OWNER>.csv
+    - Legacy: spotify_liked_songs_from_export__<OWNER>.csv
+    - Fallback: spotify_liked_songs_from_export.csv
+    """
+    candidates = [
+        PROCESSED_DIR / f"spotify_liked_songs_from_export_{owner}.csv",
+        PROCESSED_DIR / f"spotify_liked_songs_from_export__{owner}.csv",
+        PROCESSED_DIR / "spotify_liked_songs_from_export.csv",
+    ]
+    for p in candidates:
+        if p.exists():
+            return p
 
     raise FileNotFoundError(
         f"No encuentro CSV de entrada en {PROCESSED_DIR}. "
-        f"Esperaba {preferred.name} o {generic.name}."
+        f"Esperaba alguno de: {[c.name for c in candidates]}"
     )
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--owner", default="Guille")
-    ap.add_argument("--expansion", default="I")
-    ap.add_argument(
-        "--processed-month", default=None, help="YYYY-MM (si no, usa mes actual)"
-    )
-    args = ap.parse_args()
+def list_owners_from_raw() -> list[str]:
+    if not RAW_DIR.exists():
+        return []
+    owners = []
+    for p in RAW_DIR.iterdir():
+        if p.is_dir() and (p / "YourLibrary.json").exists():
+            owners.append(p.name)
+    return sorted(owners, key=lambda s: s.lower())
 
-    owner = args.owner
-    expansion = args.expansion
-    processed_month = args.processed_month or datetime.now().strftime("%Y-%m")
 
+def build_for_owner(owner: str, expansion: str, processed_month: str) -> tuple[Path, Path]:
     in_path = find_input_csv(owner)
     df = pd.read_csv(in_path).fillna("")
 
@@ -63,8 +67,13 @@ def main():
             "spotify_uri": df.get("spotify_uri", ""),
             "track_id": df.get("track_id", ""),
             "spotify_url": df.get("spotify_url", ""),
-            # year queda vacío por ahora (fuentes externas después)
             "year": df.get("year", ""),
+            # NUEVO: álbum (si existe en parser)
+            "album_name_raw": df.get("album_name", ""),
+            "album_name_trim": df.get("album_name", "").astype(str).str.strip(),
+            "album_uri": df.get("album_uri", ""),
+            "album_id": df.get("album_id", ""),
+            "album_release_date": df.get("album_release_date", ""),
         }
     )
 
@@ -81,9 +90,11 @@ def main():
     qc = {
         "rows": [len(out)],
         "unique_canonical_key": [out["canonical_key"].nunique()],
-        "missing_spotify_url": [(out["spotify_url"] == "").sum()],
-        "missing_track_id": [(out["track_id"] == "").sum()],
-        "missing_year": [(out["year"] == "").sum()],
+        "missing_spotify_url": [(out["spotify_url"].astype(str).str.strip() == "").sum()],
+        "missing_track_id": [(out["track_id"].astype(str).str.strip() == "").sum()],
+        "missing_year": [(out["year"].astype(str).str.strip() == "").sum()],
+        "missing_album_id": [(out["album_id"].astype(str).str.strip() == "").sum()],
+        "missing_album_name": [(out["album_name_trim"].astype(str).str.strip() == "").sum()],
     }
     qc_path = REPORTS_DIR / f"qc_instances_{expansion}_{owner}.csv"
     pd.DataFrame(qc).to_csv(qc_path, index=False, encoding="utf-8")
@@ -102,7 +113,30 @@ def main():
 
     print(f"OK instances -> {out_path}")
     print(f"OK qc -> {qc_path}")
-    print(f"OK manual merges -> {merges_path}")
+    return out_path, qc_path
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--owner", default=None, help="Owner concreto (ej. Guille). Si usas --all, se ignora.")
+    ap.add_argument("--all", action="store_true", help="Genera instances para todos los owners detectados en raw/")
+    ap.add_argument("--expansion", default="I")
+    ap.add_argument("--processed-month", default=None, help="YYYY-MM (si no, usa mes actual)")
+    args = ap.parse_args()
+
+    expansion = args.expansion
+    processed_month = args.processed_month or datetime.now().strftime("%Y-%m")
+
+    if args.all:
+        owners = list_owners_from_raw()
+        if not owners:
+            raise SystemExit(f"No detecto owners en {RAW_DIR}. Esperaba raw/spotify_export/<OWNER>/YourLibrary.json")
+        for o in owners:
+            build_for_owner(o, expansion=expansion, processed_month=processed_month)
+        return
+
+    owner = args.owner or "Guille"
+    build_for_owner(owner, expansion=expansion, processed_month=processed_month)
 
 
 if __name__ == "__main__":
