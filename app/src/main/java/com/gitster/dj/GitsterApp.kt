@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.safeDrawingPadding
@@ -46,6 +47,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -401,40 +403,41 @@ private fun NeonQrFrame(modifier: Modifier = Modifier) {
         val strokeOuter = size.minDimension * 0.13f
         val strokeMid = size.minDimension * 0.085f
         val strokeInner = size.minDimension * 0.045f
-        val maxStrokeWidth = maxOf(strokeOuter, strokeMid, strokeInner)
-        val glowExtra = 6.dp.toPx()
-        val baseInset = (maxStrokeWidth * 0.5f) + glowExtra
+        val maxStrokeWidthPx = maxOf(strokeOuter, strokeMid, strokeInner)
+        val extraPadPx = 8.dp.toPx()
+        val insetPx = (maxStrokeWidthPx * 0.5f) + extraPadPx
+        val frameRect = Rect(
+            left = insetPx,
+            top = insetPx,
+            right = size.width - insetPx,
+            bottom = size.height - insetPx
+        )
         val cornerOuter = 26.dp.toPx()
         val cornerMid = 24.dp.toPx()
         val cornerInner = 22.dp.toPx()
         val sweep = Brush.sweepGradient(neonColors)
-        val baseTopLeft = androidx.compose.ui.geometry.Offset(baseInset, baseInset)
-        val baseSize = androidx.compose.ui.geometry.Size(
-            width = size.width - baseInset * 2f,
-            height = size.height - baseInset * 2f
-        )
 
         rotate(rotation) {
             drawRoundRect(
                 brush = sweep,
-                topLeft = baseTopLeft,
-                size = baseSize,
+                topLeft = frameRect.topLeft,
+                size = frameRect.size,
                 cornerRadius = androidx.compose.ui.geometry.CornerRadius(cornerOuter, cornerOuter),
                 style = Stroke(width = strokeOuter),
                 alpha = 0.20f
             )
             drawRoundRect(
                 brush = sweep,
-                topLeft = baseTopLeft,
-                size = baseSize,
+                topLeft = frameRect.topLeft,
+                size = frameRect.size,
                 cornerRadius = androidx.compose.ui.geometry.CornerRadius(cornerMid, cornerMid),
                 style = Stroke(width = strokeMid),
                 alpha = 0.42f
             )
             drawRoundRect(
                 brush = sweep,
-                topLeft = baseTopLeft,
-                size = baseSize,
+                topLeft = frameRect.topLeft,
+                size = frameRect.size,
                 cornerRadius = androidx.compose.ui.geometry.CornerRadius(cornerInner, cornerInner),
                 style = Stroke(width = strokeInner),
                 alpha = 0.98f
@@ -445,6 +448,7 @@ private fun NeonQrFrame(modifier: Modifier = Modifier) {
 
 @Composable
 private fun ScanMeNeonText() {
+    val scanMeText = "SCAN ME!"
     val infinite = rememberInfiniteTransition(label = "scan_me_flicker")
     val flickerAlpha by infinite.animateFloat(
         initialValue = 1f,
@@ -465,9 +469,12 @@ private fun ScanMeNeonText() {
         label = "scan_me_alpha"
     )
 
-    Box(contentAlignment = Alignment.Center) {
+    Box(
+        modifier = Modifier.offset(y = (-10).dp),
+        contentAlignment = Alignment.Center
+    ) {
         Text(
-            text = "SCAN ME!",
+            text = scanMeText,
             color = Color(0xFFD7FF4A).copy(alpha = 0.42f * flickerAlpha),
             style = MaterialTheme.typography.titleLarge.copy(
                 fontWeight = FontWeight.ExtraBold,
@@ -484,7 +491,7 @@ private fun ScanMeNeonText() {
                 .blur(7.dp)
         )
         Text(
-            text = "SCAN ME!",
+            text = scanMeText,
             color = Color(0xFFD7FF4A).copy(alpha = 0.32f * flickerAlpha),
             style = MaterialTheme.typography.titleLarge.copy(
                 fontWeight = FontWeight.ExtraBold,
@@ -495,7 +502,7 @@ private fun ScanMeNeonText() {
             )
         )
         Text(
-            text = "SCAN ME!",
+            text = scanMeText,
             color = Color.White.copy(alpha = 0.96f * flickerAlpha),
             style = MaterialTheme.typography.titleLarge.copy(
                 fontWeight = FontWeight.ExtraBold,
