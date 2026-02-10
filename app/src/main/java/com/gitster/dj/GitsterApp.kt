@@ -20,7 +20,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.safeDrawingPadding
@@ -263,7 +262,7 @@ private fun HomeScreen(
                 Modifier.fillMaxWidth().weight(1f),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Spacer(Modifier.height(2.dp))
+                Spacer(Modifier.height(12.dp))
                 NeonFlickerLogo(modifier = Modifier.fillMaxWidth())
                 Box(
                     modifier = Modifier.fillMaxWidth().weight(1f),
@@ -314,28 +313,28 @@ private fun HomeScreen(
 @Composable
 private fun HomeQrHero() {
     val haptic = LocalHapticFeedback.current
-    val qrSize = 150.dp
+    val qrCardSize = 168.dp
     val cardPadding = 12.dp
-    val frameSize = 240.dp
-    val frameGlowPadding = 22.dp
+    val qrSize = qrCardSize - (cardPadding * 2)
+    val frameSize = 236.dp
+    val scanMeGap = 2.dp
 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Box(
             modifier = Modifier
-                .size(frameSize + frameGlowPadding * 2),
+                .size(frameSize),
             contentAlignment = Alignment.Center
         ) {
             NeonQrFrame(
                 modifier = Modifier
                     .matchParentSize()
-                    .padding(frameGlowPadding)
             )
 
             Box(
                 modifier = Modifier
-                    .size(qrSize + cardPadding * 2)
+                    .size(qrCardSize)
                     .clip(RoundedCornerShape(14.dp))
                     .background(Color(0xFFFDFDFD))
                     .padding(cardPadding)
@@ -353,7 +352,7 @@ private fun HomeQrHero() {
             }
         }
 
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(scanMeGap))
         ScanMeNeonText()
     }
 }
@@ -470,7 +469,7 @@ private fun ScanMeNeonText() {
     )
 
     Box(
-        modifier = Modifier.offset(y = (-10).dp),
+        modifier = Modifier.padding(top = 0.dp),
         contentAlignment = Alignment.Center
     ) {
         Text(
