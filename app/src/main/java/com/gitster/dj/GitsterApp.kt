@@ -44,11 +44,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalContext
@@ -312,41 +312,52 @@ private fun HomeScreen(
 @Composable
 private fun HomeQrHero() {
     val haptic = LocalHapticFeedback.current
-    val qrSize = 184.dp
+    val qrSize = 150.dp
     val cardPadding = 12.dp
-    val ringSize = 260.dp
+    val frameSize = 240.dp
+    val frameGlowPadding = 22.dp
 
-    Box(
-        modifier = Modifier.size(ringSize),
-        contentAlignment = Alignment.Center
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        NeonQrRing(
-            modifier = Modifier
-                .matchParentSize()
-        )
-
         Box(
             modifier = Modifier
-                .clip(RoundedCornerShape(14.dp))
-                .background(Color(0xFFFDFDFD))
-                .padding(cardPadding)
-                .clickable {
-                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                },
+                .size(frameSize + frameGlowPadding * 2),
             contentAlignment = Alignment.Center
         ) {
-            Image(
-                painter = painterResource(id = R.drawable.qr_home),
-                contentDescription = "QR Home",
-                modifier = Modifier.size(qrSize),
-                contentScale = ContentScale.Fit
+            NeonQrFrame(
+                modifier = Modifier
+                    .matchParentSize()
+                    .padding(frameGlowPadding)
             )
+
+            Box(
+                modifier = Modifier
+                    .size(qrSize + cardPadding * 2)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(Color(0xFFFDFDFD))
+                    .padding(cardPadding)
+                    .clickable {
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Image(
+                    painter = painterResource(id = R.drawable.qr_home),
+                    contentDescription = "QR Home",
+                    modifier = Modifier.size(qrSize),
+                    contentScale = ContentScale.Fit
+                )
+            }
         }
+
+        Spacer(Modifier.height(10.dp))
+        ScanMeNeonText()
     }
 }
 
 @Composable
-private fun NeonQrRing(modifier: Modifier = Modifier) {
+private fun NeonQrFrame(modifier: Modifier = Modifier) {
     val infinite = rememberInfiniteTransition(label = "qr_neon_ring")
     val rotation by infinite.animateFloat(
         initialValue = 0f,
@@ -367,11 +378,17 @@ private fun NeonQrRing(modifier: Modifier = Modifier) {
         label = "qr_ring_pulse"
     )
 
+    val colorMagenta = Color(0xFFFF2FD0)
     val neonColors = listOf(
-        Color(0xFFFF4FCB),
-        Color(0xFF26C6FF),
+        colorMagenta,
+        Color(0xFFFF63C9),
+        Color(0xFF9D4DFF),
+        Color(0xFF4B7BFF),
+        Color(0xFF26D7FF),
+        Color(0xFF4FFFD2),
+        Color(0xFFFFE45E),
         Color(0xFFFF9E2C),
-        Color(0xFFFFE45E)
+        colorMagenta
     )
 
     Canvas(
@@ -381,63 +398,113 @@ private fun NeonQrRing(modifier: Modifier = Modifier) {
             alpha = 0.95f
         )
     ) {
-        val strokeOuter = size.minDimension * 0.11f
-        val strokeMid = size.minDimension * 0.075f
-        val strokeInner = size.minDimension * 0.042f
-        val insetOuter = strokeOuter * 0.8f
-        val insetMid = strokeMid * 0.9f
-        val insetInner = strokeInner * 1.0f
-
-        val sweeps = listOf(54f, 42f, 50f, 46f)
-        val gaps = listOf(34f, 28f, 32f, 30f)
-        var start = -90f
+        val strokeOuter = size.minDimension * 0.13f
+        val strokeMid = size.minDimension * 0.085f
+        val strokeInner = size.minDimension * 0.045f
+        val maxStrokeWidth = maxOf(strokeOuter, strokeMid, strokeInner)
+        val glowExtra = 6.dp.toPx()
+        val baseInset = (maxStrokeWidth * 0.5f) + glowExtra
+        val cornerOuter = 26.dp.toPx()
+        val cornerMid = 24.dp.toPx()
+        val cornerInner = 22.dp.toPx()
+        val sweep = Brush.sweepGradient(neonColors)
+        val baseTopLeft = androidx.compose.ui.geometry.Offset(baseInset, baseInset)
+        val baseSize = androidx.compose.ui.geometry.Size(
+            width = size.width - baseInset * 2f,
+            height = size.height - baseInset * 2f
+        )
 
         rotate(rotation) {
-            for (i in neonColors.indices) {
-                val color = neonColors[i]
-                val sweep = sweeps[i]
-                val gap = gaps[i]
-
-                drawArc(
-                    color = color.copy(alpha = 0.22f),
-                    startAngle = start,
-                    sweepAngle = sweep,
-                    useCenter = false,
-                    topLeft = androidx.compose.ui.geometry.Offset(insetOuter, insetOuter),
-                    size = androidx.compose.ui.geometry.Size(
-                        width = size.width - insetOuter * 2f,
-                        height = size.height - insetOuter * 2f
-                    ),
-                    style = Stroke(width = strokeOuter, cap = StrokeCap.Round)
-                )
-                drawArc(
-                    color = color.copy(alpha = 0.42f),
-                    startAngle = start,
-                    sweepAngle = sweep,
-                    useCenter = false,
-                    topLeft = androidx.compose.ui.geometry.Offset(insetMid, insetMid),
-                    size = androidx.compose.ui.geometry.Size(
-                        width = size.width - insetMid * 2f,
-                        height = size.height - insetMid * 2f
-                    ),
-                    style = Stroke(width = strokeMid, cap = StrokeCap.Round)
-                )
-                drawArc(
-                    color = color.copy(alpha = 0.95f),
-                    startAngle = start,
-                    sweepAngle = sweep,
-                    useCenter = false,
-                    topLeft = androidx.compose.ui.geometry.Offset(insetInner, insetInner),
-                    size = androidx.compose.ui.geometry.Size(
-                        width = size.width - insetInner * 2f,
-                        height = size.height - insetInner * 2f
-                    ),
-                    style = Stroke(width = strokeInner, cap = StrokeCap.Round)
-                )
-
-                start += sweep + gap
-            }
+            drawRoundRect(
+                brush = sweep,
+                topLeft = baseTopLeft,
+                size = baseSize,
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(cornerOuter, cornerOuter),
+                style = Stroke(width = strokeOuter),
+                alpha = 0.20f
+            )
+            drawRoundRect(
+                brush = sweep,
+                topLeft = baseTopLeft,
+                size = baseSize,
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(cornerMid, cornerMid),
+                style = Stroke(width = strokeMid),
+                alpha = 0.42f
+            )
+            drawRoundRect(
+                brush = sweep,
+                topLeft = baseTopLeft,
+                size = baseSize,
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(cornerInner, cornerInner),
+                style = Stroke(width = strokeInner),
+                alpha = 0.98f
+            )
         }
+    }
+}
+
+@Composable
+private fun ScanMeNeonText() {
+    val infinite = rememberInfiniteTransition(label = "scan_me_flicker")
+    val flickerAlpha by infinite.animateFloat(
+        initialValue = 1f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = keyframes {
+                durationMillis = 1500
+                1f at 0
+                0.84f at 190
+                1f at 280
+                0.72f at 780
+                1f at 890
+                0.88f at 1220
+                1f at 1500
+            },
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "scan_me_alpha"
+    )
+
+    Box(contentAlignment = Alignment.Center) {
+        Text(
+            text = "SCAN ME!",
+            color = Color(0xFFD7FF4A).copy(alpha = 0.42f * flickerAlpha),
+            style = MaterialTheme.typography.titleLarge.copy(
+                fontWeight = FontWeight.ExtraBold,
+                shadow = Shadow(
+                    color = Color.Black.copy(alpha = 0.82f),
+                    blurRadius = 28f
+                )
+            ),
+            modifier = Modifier
+                .graphicsLayer(
+                    scaleX = 1.04f,
+                    scaleY = 1.04f
+                )
+                .blur(7.dp)
+        )
+        Text(
+            text = "SCAN ME!",
+            color = Color(0xFFD7FF4A).copy(alpha = 0.32f * flickerAlpha),
+            style = MaterialTheme.typography.titleLarge.copy(
+                fontWeight = FontWeight.ExtraBold,
+                shadow = Shadow(
+                    color = Color(0xFFD7FF4A).copy(alpha = 0.9f),
+                    blurRadius = 24f
+                )
+            )
+        )
+        Text(
+            text = "SCAN ME!",
+            color = Color.White.copy(alpha = 0.96f * flickerAlpha),
+            style = MaterialTheme.typography.titleLarge.copy(
+                fontWeight = FontWeight.ExtraBold,
+                shadow = Shadow(
+                    color = Color(0xFFD7FF4A).copy(alpha = 0.68f),
+                    blurRadius = 10f
+                )
+            )
+        )
     }
 }
 
