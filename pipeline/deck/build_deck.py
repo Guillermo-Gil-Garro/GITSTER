@@ -211,6 +211,8 @@ def select_deck_300(
     relax_owner_cap_if_needed: bool,
     prefer_have_spotify_url: bool,
     reports_prefix: Path,
+    canonical_df: Optional[pd.DataFrame] = None,
+    verbose: bool = False,
 ) -> pd.DataFrame:
     """
     Selección con:
@@ -245,6 +247,58 @@ def select_deck_300(
     if max_per_album > 0:
         df = df.copy()
 
+        # Backfill album fields desde canonical si faltan en el pool/candidates.
+        if canonical_df is not None and "canonical_id" in df.columns and "canonical_id" in canonical_df.columns:
+            before_nonempty = 0
+            for c in ["album_id", "album_name"]:
+                if c in df.columns:
+                    before_nonempty += int(df[c].fillna("").astype(str).str.strip().ne("").sum())
+
+            need_backfill = (
+                ("album_id" not in df.columns and "album_name" not in df.columns)
+                or (
+                    ("album_id" in df.columns and df["album_id"].fillna("").astype(str).str.strip().eq("").all())
+                    and ("album_name" in df.columns and df["album_name"].fillna("").astype(str).str.strip().eq("").all())
+                )
+                or (
+                    ("album_id" in df.columns and df["album_id"].fillna("").astype(str).str.strip().eq("").all())
+                    and ("album_name" not in df.columns)
+                )
+                or (
+                    ("album_name" in df.columns and df["album_name"].fillna("").astype(str).str.strip().eq("").all())
+                    and ("album_id" not in df.columns)
+                )
+            )
+
+            if need_backfill:
+                canon_cols = ["canonical_id"] + [c for c in ["album_id", "album_name"] if c in canonical_df.columns]
+                if len(canon_cols) > 1:
+                    canon_album = canonical_df[canon_cols].copy()
+                    canon_album = canon_album.drop_duplicates(subset=["canonical_id"], keep="first")
+                    df = df.merge(
+                        canon_album,
+                        on="canonical_id",
+                        how="left",
+                        suffixes=("", "_canon_backfill"),
+                    )
+
+                    filled_now = 0
+                    for c in ["album_id", "album_name"]:
+                        c_bf = f"{c}_canon_backfill"
+                        if c_bf in df.columns:
+                            if c not in df.columns:
+                                df[c] = df[c_bf]
+                            else:
+                                left = df[c].fillna("").astype(str).str.strip()
+                                right = df[c_bf].fillna("").astype(str).str.strip()
+                                df[c] = left.where(left.ne(""), right)
+                            df = df.drop(columns=[c_bf], errors="ignore")
+                    for c in ["album_id", "album_name"]:
+                        if c in df.columns:
+                            filled_now += int(df[c].fillna("").astype(str).str.strip().ne("").sum())
+                    if verbose:
+                        print(f"album backfill from canonical: OK (n filled {max(0, filled_now - before_nonempty)})")
+
         # Normalizar posibles columnas
         if "album_id" in df.columns:
             df["album_id"] = df["album_id"].astype(str).str.strip()
@@ -255,31 +309,41 @@ def select_deck_300(
         if "album_name" in df.columns:
             df["album_name"] = df["album_name"].astype(str).str.strip()
 
-        def _norm_album_name(s: str) -> str:
+        def _norm_text(s: str) -> str:
             s = str(s or "").strip().lower()
             s = re.sub(r"\s{2,}", " ", s)
             return s
 
         # Construir album_key
+        # 1) album_id (si existe y no vac?o)
+        # 2) fallback robusto: normalize(album_name) || normalize(artists_canon|artists_display)
         df["album_key"] = ""
 
-        # 1) album_id
-        if "album_id" in df.columns and df["album_id"].ne("").any():
+        if "album_id" in df.columns:
+            df["album_id"] = df["album_id"].fillna("").astype(str).str.strip()
             mask_id = df["album_id"].ne("")
-            df.loc[mask_id, "album_key"] = "id:" + df.loc[mask_id, "album_id"]
+            df.loc[mask_id, "album_key"] = df.loc[mask_id, "album_id"]
 
-        # 2) fallback a album_name_* (incluyendo year para evitar colisiones)
         if df["album_key"].eq("").any():
             name_series = None
-            for c in ["album_name_trim", "album_name", "album_name_raw"]:
-                if c in df.columns and df[c].astype(str).str.strip().ne("").any():
-                    name_series = df[c].astype(str)
-                    break
+            for c in ["album_name", "album_name_trim", "album_name_raw"]:
+                if c in df.columns:
+                    cand = df[c].fillna("").astype(str).str.strip()
+                    if cand.ne("").any():
+                        name_series = cand
+                        break
+
+            if "artists_canon" in df.columns:
+                artist_series = df["artists_canon"].fillna("").astype(str)
+            elif "artists_display" in df.columns:
+                artist_series = df["artists_display"].fillna("").astype(str)
+            else:
+                artist_series = pd.Series([""] * len(df), index=df.index)
 
             if name_series is not None:
                 mask = df["album_key"].eq("") & name_series.astype(str).str.strip().ne("")
                 df.loc[mask, "album_key"] = (
-                    "name:" + name_series.loc[mask].map(_norm_album_name) + "::" + df.loc[mask, "year"].astype(int).astype(str)
+                    name_series.loc[mask].map(_norm_text) + "||" + artist_series.loc[mask].map(_norm_text)
                 )
 
         if df["album_key"].astype(str).str.strip().eq("").all():
@@ -474,6 +538,7 @@ def main():
     ap.add_argument("--owner-cap-cards", type=int, default=0, help="Cap por owner en nº de cartas (0 = auto)")
     ap.add_argument("--owner-cap-slack", type=float, default=0.12, help="Slack sumado a 1/N en modo auto (ej: 0.12)")
     ap.add_argument("--relax-owner-cap-if-needed", action="store_true", help="Si no llena, relaja owner cap (mantiene album cap)")
+    ap.add_argument("--verbose", action="store_true", help="Logging detallado opcional")
 
     args = ap.parse_args()
 
@@ -637,6 +702,8 @@ def main():
             relax_owner_cap_if_needed=bool(args.relax_owner_cap_if_needed),
             prefer_have_spotify_url=prefer_have_spotify,
             reports_prefix=reports_prefix,
+            canonical_df=canon,
+            verbose=bool(args.verbose),
         )
         deck_out = selected.copy()
     else:

@@ -1,0 +1,414 @@
+import argparse
+import json
+import logging
+import re
+import time
+from datetime import datetime
+from pathlib import Path
+from typing import Any
+
+import pandas as pd
+from dotenv import load_dotenv
+import spotipy
+from spotipy.oauth2 import SpotifyOAuth
+
+
+TRACK_URI_RE = re.compile(r"spotify:track:([A-Za-z0-9]+)")
+INPUT_PREFIX = "spotify_liked_songs_from_export_"
+
+
+def get_repo_root() -> Path:
+    return Path(__file__).resolve().parents[2]
+
+
+REPO_ROOT = get_repo_root()
+PROCESSED_DIR = REPO_ROOT / "pipeline" / "data" / "processed"
+CACHE_DIR = REPO_ROOT / "pipeline" / "cache"
+REPORTS_DIR = REPO_ROOT / "pipeline" / "reports"
+CACHE_PATH = CACHE_DIR / "spotify_tracks_cache.json"
+TOKEN_CACHE_PATH = CACHE_DIR / "spotify_oauth_token_cache.json"
+
+
+def setup_logging() -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s | %(levelname)s | %(message)s",
+    )
+
+
+def clean_str(value: Any) -> str:
+    if value is None:
+        return ""
+    return str(value).strip()
+
+
+def parse_owner_from_input_filename(path: Path) -> str | None:
+    stem = path.stem
+    if not stem.startswith(INPUT_PREFIX):
+        return None
+    if stem.endswith("_enriched"):
+        return None
+    owner = stem[len(INPUT_PREFIX):].strip()
+    owner = owner.lstrip("_")
+    return owner or None
+
+
+def find_owner_inputs() -> dict[str, Path]:
+    owner_map: dict[str, tuple[int, Path]] = {}
+    for path in sorted(PROCESSED_DIR.glob(f"{INPUT_PREFIX}*.csv")):
+        owner = parse_owner_from_input_filename(path)
+        if not owner:
+            continue
+        # Prefer canonical name without legacy double underscore.
+        priority = 1 if "__" in path.name else 0
+        prev = owner_map.get(owner)
+        if prev is None or priority < prev[0]:
+            owner_map[owner] = (priority, path)
+    return {owner: meta[1] for owner, meta in owner_map.items()}
+
+
+def find_input_for_owner(owner: str) -> Path:
+    owner_inputs = find_owner_inputs()
+    for existing_owner, path in owner_inputs.items():
+        if existing_owner.lower() == owner.lower():
+            return path
+    raise FileNotFoundError(
+        f"No input CSV for owner '{owner}' in {PROCESSED_DIR}. "
+        f"Expected {INPUT_PREFIX}<OWNER>.csv"
+    )
+
+
+def extract_track_id(track_id: Any, spotify_uri: Any) -> str:
+    tid = clean_str(track_id)
+    if tid:
+        return tid
+    uri = clean_str(spotify_uri)
+    if not uri:
+        return ""
+    m = TRACK_URI_RE.search(uri)
+    return m.group(1) if m else ""
+
+
+def chunked(items: list[str], size: int) -> list[list[str]]:
+    return [items[i:i + size] for i in range(0, len(items), size)]
+
+
+def normalize_track(track: dict[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(track, dict):
+        return {}
+
+    artists = track.get("artists") or []
+    artist_names = [clean_str(a.get("name")) for a in artists if isinstance(a, dict) and clean_str(a.get("name"))]
+    artist_ids = [clean_str(a.get("id")) for a in artists if isinstance(a, dict) and clean_str(a.get("id"))]
+
+    album = track.get("album") or {}
+    album_release_date = clean_str(album.get("release_date"))
+    album_release_year: int | None = None
+    if album_release_date[:4].isdigit():
+        album_release_year = int(album_release_date[:4])
+
+    return {
+        "artists_full": ", ".join(artist_names),
+        "artists_ids": "|".join(artist_ids),
+        "album_id": clean_str(album.get("id")),
+        "album_name": clean_str(album.get("name")),
+        "album_release_date": album_release_date,
+        "album_release_year": album_release_year,
+        "track_popularity": track.get("popularity"),
+        "explicit": track.get("explicit"),
+        "duration_ms": track.get("duration_ms"),
+        "preview_url": clean_str(track.get("preview_url")),
+    }
+
+
+def load_cache(cache_path: Path) -> dict[str, dict[str, Any]]:
+    if not cache_path.exists():
+        return {}
+    try:
+        raw = json.loads(cache_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        logging.warning("Cache file is invalid JSON. Starting empty cache: %s", cache_path)
+        return {}
+
+    if isinstance(raw, dict) and "tracks" in raw and isinstance(raw["tracks"], dict):
+        return raw["tracks"]
+    if isinstance(raw, dict):
+        return {k: v for k, v in raw.items() if isinstance(v, dict)}
+    return {}
+
+
+def save_cache(cache_path: Path, cache: dict[str, dict[str, Any]]) -> None:
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "version": 1,
+        "updated_at": datetime.now().isoformat(timespec="seconds"),
+        "tracks": cache,
+    }
+    tmp = cache_path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp.replace(cache_path)
+
+
+def make_spotify_client() -> spotipy.Spotify:
+    dotenv_path = REPO_ROOT / ".env"
+    if dotenv_path.exists():
+        load_dotenv(dotenv_path=dotenv_path)
+    else:
+        load_dotenv()
+
+    import os
+
+    client_id = clean_str(os.getenv("SPOTIFY_CLIENT_ID")) or clean_str(os.getenv("SPOTIPY_CLIENT_ID"))
+    client_secret = clean_str(os.getenv("SPOTIFY_CLIENT_SECRET")) or clean_str(os.getenv("SPOTIPY_CLIENT_SECRET"))
+    redirect_uri = clean_str(os.getenv("SPOTIFY_REDIRECT_URI")) or clean_str(os.getenv("SPOTIPY_REDIRECT_URI"))
+
+    missing = []
+    if not client_id:
+        missing.append("SPOTIFY_CLIENT_ID")
+    if not client_secret:
+        missing.append("SPOTIFY_CLIENT_SECRET")
+    if not redirect_uri:
+        missing.append("SPOTIFY_REDIRECT_URI")
+    if missing:
+        raise SystemExit(f"Missing variables in .env: {', '.join(missing)}")
+
+    auth_manager = SpotifyOAuth(
+        client_id=client_id,
+        client_secret=client_secret,
+        redirect_uri=redirect_uri,
+        scope="user-library-read",
+        open_browser=True,
+        cache_path=str(TOKEN_CACHE_PATH),
+    )
+    return spotipy.Spotify(auth_manager=auth_manager)
+
+
+def fetch_tracks_with_backoff(
+    sp: spotipy.Spotify,
+    ids: list[str],
+    batch_size: int,
+) -> tuple[dict[str, dict[str, Any]], int]:
+    fetched: dict[str, dict[str, Any]] = {}
+    api_calls = 0
+    batches = chunked(ids, batch_size)
+    total = len(ids)
+    processed = 0
+
+    for idx, batch in enumerate(batches, start=1):
+        attempt = 0
+        while True:
+            attempt += 1
+            try:
+                response = sp.tracks(batch)
+                api_calls += 1
+                tracks = response.get("tracks") or []
+                for track in tracks:
+                    if isinstance(track, dict) and clean_str(track.get("id")):
+                        fetched[track["id"]] = normalize_track(track)
+                processed += len(batch)
+                logging.info("processed %s/%s (batch %s/%s)", processed, total, idx, len(batches))
+                break
+            except spotipy.SpotifyException as exc:
+                status = getattr(exc, "http_status", None)
+                headers = getattr(exc, "headers", {}) or {}
+                if status == 429 and attempt <= 8:
+                    retry_after = clean_str(headers.get("Retry-After"))
+                    sleep_s = int(retry_after) if retry_after.isdigit() else 1
+                    logging.warning("Spotify 429 in batch %s. Retry-After=%ss", idx, sleep_s)
+                    time.sleep(max(1, sleep_s))
+                    continue
+                if status in (500, 502, 503, 504) and attempt <= 6:
+                    sleep_s = min(30, 2 ** (attempt - 1))
+                    logging.warning("Spotify %s in batch %s. Backoff %ss", status, idx, sleep_s)
+                    time.sleep(sleep_s)
+                    continue
+                raise
+
+    return fetched, api_calls
+
+
+def merge_enrichment(df: pd.DataFrame, enrich_map: dict[str, dict[str, Any]]) -> pd.DataFrame:
+    out = df.copy()
+    out["_track_id_norm"] = [
+        extract_track_id(track_id=row.get("track_id", ""), spotify_uri=row.get("spotify_uri", ""))
+        for _, row in out.iterrows()
+    ]
+
+    columns = [
+        "artists_full",
+        "artists_ids",
+        "album_id",
+        "album_name",
+        "album_release_date",
+        "album_release_year",
+        "track_popularity",
+        "explicit",
+        "duration_ms",
+        "preview_url",
+    ]
+
+    for col in columns:
+        mapped = out["_track_id_norm"].map(lambda tid: (enrich_map.get(tid) or {}).get(col))
+        if col in out.columns:
+            out[col] = mapped.where(mapped.notna(), out[col])
+        else:
+            out[col] = mapped
+
+    out.drop(columns=["_track_id_norm"], inplace=True)
+    return out
+
+
+def owner_output_path(owner: str) -> Path:
+    return PROCESSED_DIR / f"{INPUT_PREFIX}{owner}_enriched.csv"
+
+
+def report_path(expansion: str | None) -> Path:
+    if expansion:
+        return REPORTS_DIR / f"qc_spotify_enrich_{expansion}.csv"
+    return REPORTS_DIR / "qc_spotify_enrich.csv"
+
+
+def run_owner(
+    owner: str,
+    in_path: Path,
+    cache: dict[str, dict[str, Any]],
+    sp: spotipy.Spotify | None,
+    batch_size: int,
+    force_refresh: bool,
+    dry_run: bool,
+) -> dict[str, Any]:
+    df = pd.read_csv(in_path).fillna("")
+    track_ids = [
+        extract_track_id(track_id=row.get("track_id", ""), spotify_uri=row.get("spotify_uri", ""))
+        for _, row in df.iterrows()
+    ]
+    total_rows = len(df)
+    missing_track_id = sum(1 for tid in track_ids if not tid)
+    unique_ids = sorted({tid for tid in track_ids if tid})
+
+    if force_refresh:
+        missing_for_api = unique_ids
+        cache_hits = 0
+    else:
+        missing_for_api = [tid for tid in unique_ids if tid not in cache]
+        cache_hits = len(unique_ids) - len(missing_for_api)
+
+    logging.info(
+        "[%s] rows=%s unique_track_ids=%s missing_track_id=%s cache_hits=%s pending_api=%s",
+        owner,
+        total_rows,
+        len(unique_ids),
+        missing_track_id,
+        cache_hits,
+        len(missing_for_api),
+    )
+
+    if dry_run:
+        sample_missing = missing_for_api[:5]
+        logging.info("[%s] dry-run sample track_ids to fetch: %s", owner, sample_missing)
+        return {
+            "owner": owner,
+            "rows": total_rows,
+            "unique_track_ids": len(unique_ids),
+            "missing_track_id": missing_track_id,
+            "cache_hits": cache_hits,
+            "pending_api": len(missing_for_api),
+            "api_calls": 0,
+            "enriched_rows": 0,
+            "output_path": str(owner_output_path(owner)),
+        }
+
+    api_calls = 0
+    if missing_for_api:
+        if sp is None:
+            raise RuntimeError("Spotify client is required when dry-run is disabled.")
+        fetched, api_calls = fetch_tracks_with_backoff(sp=sp, ids=missing_for_api, batch_size=batch_size)
+        cache.update(fetched)
+
+    enrich_map = {tid: cache.get(tid, {}) for tid in unique_ids}
+    out_df = merge_enrichment(df, enrich_map)
+    enriched_rows = out_df["artists_full"].astype(str).str.strip().ne("").sum() if "artists_full" in out_df.columns else 0
+
+    out_path = owner_output_path(owner)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_df.to_csv(out_path, index=False, encoding="utf-8")
+    logging.info("[%s] wrote enriched CSV: %s", owner, out_path)
+
+    return {
+        "owner": owner,
+        "rows": total_rows,
+        "unique_track_ids": len(unique_ids),
+        "missing_track_id": missing_track_id,
+        "cache_hits": cache_hits,
+        "pending_api": len(missing_for_api),
+        "api_calls": api_calls,
+        "enriched_rows": int(enriched_rows),
+        "output_path": str(out_path),
+    }
+
+
+def parse_args() -> argparse.Namespace:
+    ap = argparse.ArgumentParser(description="Enrich Spotify export tracks with full metadata.")
+    ap.add_argument("--owner", default=None, help="Owner to process (e.g. Guille).")
+    ap.add_argument("--all", action="store_true", help="Process all owners found in processed CSV files.")
+    ap.add_argument("--dry-run", action="store_true", help="Do not write outputs or cache; report only.")
+    ap.add_argument("--force-refresh", action="store_true", help="Ignore cache and fetch all track_ids again.")
+    ap.add_argument("--batch-size", type=int, default=50, help="Spotify /tracks batch size (max 50).")
+    ap.add_argument("--expansion", default=None, help="Optional expansion code for QC report filename.")
+    return ap.parse_args()
+
+
+def main() -> None:
+    setup_logging()
+    args = parse_args()
+
+    if args.batch_size < 1 or args.batch_size > 50:
+        raise SystemExit("--batch-size must be between 1 and 50.")
+
+    owner_inputs = find_owner_inputs()
+    if not owner_inputs:
+        raise SystemExit(f"No input files found in {PROCESSED_DIR} with pattern {INPUT_PREFIX}*.csv")
+
+    if args.owner:
+        selected = [args.owner]
+    elif args.all or not args.owner:
+        selected = sorted(owner_inputs.keys(), key=str.lower)
+    else:
+        selected = sorted(owner_inputs.keys(), key=str.lower)
+
+    cache = load_cache(CACHE_PATH)
+    sp = None if args.dry_run else make_spotify_client()
+
+    qc_rows = []
+    started = datetime.now().isoformat(timespec="seconds")
+    for owner in selected:
+        in_path = find_input_for_owner(owner)
+        stats = run_owner(
+            owner=owner,
+            in_path=in_path,
+            cache=cache,
+            sp=sp,
+            batch_size=args.batch_size,
+            force_refresh=args.force_refresh,
+            dry_run=args.dry_run,
+        )
+        stats["input_path"] = str(in_path)
+        stats["dry_run"] = bool(args.dry_run)
+        stats["force_refresh"] = bool(args.force_refresh)
+        stats["started_at"] = started
+        stats["finished_at"] = datetime.now().isoformat(timespec="seconds")
+        qc_rows.append(stats)
+
+    if args.dry_run:
+        logging.info("Dry-run complete. No files written.")
+        return
+
+    save_cache(CACHE_PATH, cache)
+    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    qc_path = report_path(args.expansion)
+    pd.DataFrame(qc_rows).to_csv(qc_path, index=False, encoding="utf-8")
+    logging.info("QC report written: %s", qc_path)
+
+
+if __name__ == "__main__":
+    main()

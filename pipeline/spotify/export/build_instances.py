@@ -12,12 +12,16 @@ RAW_DIR = Path("pipeline/data/raw/spotify_export")
 
 def find_input_csv(owner: str) -> Path:
     """
-    Compatibilidad:
-    - Nuevo: spotify_liked_songs_from_export_<OWNER>.csv
-    - Legacy: spotify_liked_songs_from_export__<OWNER>.csv
-    - Fallback: spotify_liked_songs_from_export.csv
+    Compatibilidad y prioridad de inputs:
+    1) Enriched: spotify_liked_songs_from_export_<OWNER>_enriched.csv
+    2) Enriched legacy: spotify_liked_songs_from_export__<OWNER>_enriched.csv
+    3) Original: spotify_liked_songs_from_export_<OWNER>.csv
+    4) Original legacy: spotify_liked_songs_from_export__<OWNER>.csv
+    5) Fallback global: spotify_liked_songs_from_export.csv
     """
     candidates = [
+        PROCESSED_DIR / f"spotify_liked_songs_from_export_{owner}_enriched.csv",
+        PROCESSED_DIR / f"spotify_liked_songs_from_export__{owner}_enriched.csv",
         PROCESSED_DIR / f"spotify_liked_songs_from_export_{owner}.csv",
         PROCESSED_DIR / f"spotify_liked_songs_from_export__{owner}.csv",
         PROCESSED_DIR / "spotify_liked_songs_from_export.csv",
@@ -42,16 +46,24 @@ def list_owners_from_raw() -> list[str]:
     return sorted(owners, key=lambda s: s.lower())
 
 
+def pick_artists_series(df: pd.DataFrame) -> pd.Series:
+    artists_base = df.get("artists", "").astype(str).str.strip()
+    if "artists_full" not in df.columns:
+        return artists_base
+
+    artists_full = df.get("artists_full", "").astype(str).str.strip()
+    return artists_full.where(artists_full != "", artists_base)
+
+
 def build_for_owner(owner: str, expansion: str, processed_month: str) -> tuple[Path, Path]:
     in_path = find_input_csv(owner)
     df = pd.read_csv(in_path).fillna("")
 
-    # Esperamos columnas del parser: owner_label,title,artists,spotify_uri,track_id,spotify_url,year
-    # (si el parser no trae owner_label, lo forzamos)
     if "owner_label" not in df.columns:
         df["owner_label"] = owner
 
-    # Construcción de instances estándar
+    artists_series = pick_artists_series(df)
+
     out = pd.DataFrame(
         {
             "owner_label": owner,
@@ -61,14 +73,14 @@ def build_for_owner(owner: str, expansion: str, processed_month: str) -> tuple[P
             "processed_month": processed_month,
             "expansion_code": expansion,
             "title_raw": df.get("title", ""),
-            "artists_raw": df.get("artists", ""),
+            "artists_raw": artists_series,
+            "artists_display": artists_series,
             "title_trim": df.get("title", "").astype(str).str.strip(),
-            "artists_trim": df.get("artists", "").astype(str).str.strip(),
+            "artists_trim": artists_series,
             "spotify_uri": df.get("spotify_uri", ""),
             "track_id": df.get("track_id", ""),
             "spotify_url": df.get("spotify_url", ""),
             "year": df.get("year", ""),
-            # NUEVO: álbum (si existe en parser)
             "album_name_raw": df.get("album_name", ""),
             "album_name_trim": df.get("album_name", "").astype(str).str.strip(),
             "album_uri": df.get("album_uri", ""),
@@ -86,7 +98,6 @@ def build_for_owner(owner: str, expansion: str, processed_month: str) -> tuple[P
     out_path = PROCESSED_DIR / f"instances_{expansion}_{owner}.csv"
     out.to_csv(out_path, index=False, encoding="utf-8")
 
-    # Mini QC report (CSV sencillo)
     qc = {
         "rows": [len(out)],
         "unique_canonical_key": [out["canonical_key"].nunique()],
@@ -99,7 +110,6 @@ def build_for_owner(owner: str, expansion: str, processed_month: str) -> tuple[P
     qc_path = REPORTS_DIR / f"qc_instances_{expansion}_{owner}.csv"
     pd.DataFrame(qc).to_csv(qc_path, index=False, encoding="utf-8")
 
-    # Stub de merges manuales (para el futuro)
     merges_path = MANUAL_DIR / "manual_merges.csv"
     if not merges_path.exists():
         pd.DataFrame(
