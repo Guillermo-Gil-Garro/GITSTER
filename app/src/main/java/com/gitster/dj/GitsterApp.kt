@@ -12,7 +12,6 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,12 +19,15 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -42,19 +44,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
@@ -262,7 +262,7 @@ private fun HomeScreen(
                 Modifier.fillMaxWidth().weight(1f),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(26.dp))
                 NeonFlickerLogo(modifier = Modifier.fillMaxWidth())
                 Box(
                     modifier = Modifier.fillMaxWidth().weight(1f),
@@ -312,62 +312,63 @@ private fun HomeScreen(
 
 @Composable
 private fun HomeQrHero() {
-    val haptic = LocalHapticFeedback.current
-    val qrCardSize = 168.dp
-    val cardPadding = 12.dp
-    val qrSize = qrCardSize - (cardPadding * 2)
-    val frameSize = 236.dp
-    val scanMeGap = 2.dp
+    val frameVisualSize = 248.dp
+    val frameCanvasSize = 320.dp
+    val qrCardSize = 176.dp
 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Box(
-            modifier = Modifier
-                .size(frameSize),
+            modifier = Modifier.size(frameCanvasSize),
             contentAlignment = Alignment.Center
         ) {
             NeonQrFrame(
-                modifier = Modifier
-                    .matchParentSize()
+                modifier = Modifier.fillMaxSize(),
+                frameVisualSize = frameVisualSize
             )
 
-            Box(
+            Card(
                 modifier = Modifier
-                    .size(qrCardSize)
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(Color(0xFFFDFDFD))
-                    .padding(cardPadding)
-                    .clickable {
-                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                    },
-                contentAlignment = Alignment.Center
+                    .size(qrCardSize),
+                shape = RoundedCornerShape(14.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFFFDFDFD))
             ) {
-                Image(
-                    painter = painterResource(id = R.drawable.qr_home),
-                    contentDescription = "QR Home",
-                    modifier = Modifier.size(qrSize),
-                    contentScale = ContentScale.Fit
-                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(12.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Image(
+                        painter = painterResource(id = R.drawable.qr_home),
+                        contentDescription = "QR",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Fit
+                    )
+                }
             }
         }
 
-        Spacer(Modifier.height(scanMeGap))
+        Spacer(Modifier.height(2.dp))
         ScanMeNeonText()
     }
 }
 
 @Composable
-private fun NeonQrFrame(modifier: Modifier = Modifier) {
+private fun NeonQrFrame(
+    modifier: Modifier = Modifier,
+    frameVisualSize: androidx.compose.ui.unit.Dp
+) {
     val infinite = rememberInfiniteTransition(label = "qr_neon_ring")
-    val rotation by infinite.animateFloat(
+    val angleDeg by infinite.animateFloat(
         initialValue = 0f,
         targetValue = 360f,
         animationSpec = infiniteRepeatable(
             animation = tween(durationMillis = 7000),
             repeatMode = RepeatMode.Restart
         ),
-        label = "qr_ring_rotation"
+        label = "qr_ring_angle"
     )
     val pulse by infinite.animateFloat(
         initialValue = 0.98f,
@@ -391,56 +392,56 @@ private fun NeonQrFrame(modifier: Modifier = Modifier) {
         Color(0xFFFF9E2C),
         colorMagenta
     )
+    val sweep = Brush.sweepGradient(colors = neonColors)
 
     Canvas(
-        modifier = modifier.graphicsLayer(
-            scaleX = pulse,
-            scaleY = pulse,
-            alpha = 0.95f
-        )
+        modifier = modifier.graphicsLayer(alpha = 0.95f)
     ) {
         val strokeOuter = size.minDimension * 0.13f
         val strokeMid = size.minDimension * 0.085f
         val strokeInner = size.minDimension * 0.045f
-        val maxStrokeWidthPx = maxOf(strokeOuter, strokeMid, strokeInner)
-        val extraPadPx = 8.dp.toPx()
-        val insetPx = (maxStrokeWidthPx * 0.5f) + extraPadPx
+        val maxStroke = maxOf(strokeOuter, strokeMid, strokeInner)
+        val side = frameVisualSize.toPx()
+        val left = (size.width - side) / 2f
+        val top = (size.height - side) / 2f
+        val inset = (maxStroke / 2f) + 10.dp.toPx()
         val frameRect = Rect(
-            left = insetPx,
-            top = insetPx,
-            right = size.width - insetPx,
-            bottom = size.height - insetPx
+            left = left + inset,
+            top = top + inset,
+            right = left + side - inset,
+            bottom = top + side - inset
         )
         val cornerOuter = 26.dp.toPx()
         val cornerMid = 24.dp.toPx()
         val cornerInner = 22.dp.toPx()
-        val sweep = Brush.sweepGradient(neonColors)
 
-        rotate(rotation) {
-            drawRoundRect(
-                brush = sweep,
-                topLeft = frameRect.topLeft,
-                size = frameRect.size,
-                cornerRadius = androidx.compose.ui.geometry.CornerRadius(cornerOuter, cornerOuter),
-                style = Stroke(width = strokeOuter),
-                alpha = 0.20f
-            )
-            drawRoundRect(
-                brush = sweep,
-                topLeft = frameRect.topLeft,
-                size = frameRect.size,
-                cornerRadius = androidx.compose.ui.geometry.CornerRadius(cornerMid, cornerMid),
-                style = Stroke(width = strokeMid),
-                alpha = 0.42f
-            )
-            drawRoundRect(
-                brush = sweep,
-                topLeft = frameRect.topLeft,
-                size = frameRect.size,
-                cornerRadius = androidx.compose.ui.geometry.CornerRadius(cornerInner, cornerInner),
-                style = Stroke(width = strokeInner),
-                alpha = 0.98f
-            )
+        rotate(degrees = angleDeg, pivot = center) {
+            scale(scale = pulse, pivot = center) {
+                drawRoundRect(
+                    brush = sweep,
+                    topLeft = frameRect.topLeft,
+                    size = frameRect.size,
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(cornerOuter, cornerOuter),
+                    style = Stroke(width = strokeOuter),
+                    alpha = 0.20f
+                )
+                drawRoundRect(
+                    brush = sweep,
+                    topLeft = frameRect.topLeft,
+                    size = frameRect.size,
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(cornerMid, cornerMid),
+                    style = Stroke(width = strokeMid),
+                    alpha = 0.42f
+                )
+                drawRoundRect(
+                    brush = sweep,
+                    topLeft = frameRect.topLeft,
+                    size = frameRect.size,
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(cornerInner, cornerInner),
+                    style = Stroke(width = strokeInner),
+                    alpha = 0.98f
+                )
+            }
         }
     }
 }
@@ -469,7 +470,9 @@ private fun ScanMeNeonText() {
     )
 
     Box(
-        modifier = Modifier.padding(top = 0.dp),
+        modifier = Modifier
+            .offset(y = (-22).dp)
+            .padding(top = 0.dp),
         contentAlignment = Alignment.Center
     ) {
         Text(

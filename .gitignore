@@ -13,3 +13,19 @@
 .externalNativeBuild
 .cxx
 local.properties
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Android local
+*.jks
+*.keystore
+*.p12
+
+# Pipeline (si aplica)
+pipeline/data/
+pipeline/processed/
+pipeline/reports/
+pipeline/cache/
