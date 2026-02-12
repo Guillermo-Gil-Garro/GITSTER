@@ -206,12 +206,40 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 
-# Extra (de ChatGPT)
-.env
+# Extra (repo)
 .cache-spotify-token
-pipeline/data/
-*.csv
-*.parquet
-*.json
-pipeline/cache/
-pipeline/reports/
+.cache
+
+# Secrets / local env
+.env
+.env.*
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Local scratch/temp
+*.bak
+*.bak2
+*.tmp
+
+# Pipeline generated artifacts
+pipeline/data/processed/**
+pipeline/reports/**
+pipeline/cache/**
+
+# Raw Spotify exports (privacy)
+pipeline/data/raw/spotify_export/**
+
+# Generated print PDFs under reports
+pipeline/reports/**/print_*.pdf
+
+# Keep these folders trackable
+!pipeline/manual/
+!pipeline/manual/**
+!pipeline/registry/
+!pipeline/registry/**
+!pipeline/cards/assets/
+!pipeline/cards/assets/**
+!docs/
+!docs/**

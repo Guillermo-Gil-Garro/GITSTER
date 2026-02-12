@@ -1,0 +1,11 @@
+pandas
+numpy
+requests
+python-dotenv
+tenacity
+PyYAML
+rapidfuzz
+reportlab
+qrcode
+pillow
+tqdm

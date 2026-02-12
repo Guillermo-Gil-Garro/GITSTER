@@ -1,0 +1,7 @@
+expansion: I
+owners: [Guille, Luks, Blo]
+seed: 666
+deck:
+  limit: 300
+  max_per_album: 3
+  manual_alpha: 0.67
