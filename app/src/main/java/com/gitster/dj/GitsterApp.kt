@@ -66,7 +66,7 @@ private sealed interface Screen {
 }
 
 data class PlayableCard(
-    val raw: String,
+    val rawUrl: String,
     val kind: ScanResolution.Kind,
     val cardId: String?,
     val trackId: String?,
@@ -83,7 +83,7 @@ private val ScreenSaver: Saver<Screen, Any> = Saver(
             Screen.Scan -> arrayListOf("scan")
             is Screen.Playback -> arrayListOf(
                 "playback",
-                s.playable.raw,
+                s.playable.rawUrl,
                 s.playable.kind.name,
                 s.playable.cardId.orEmpty(),
                 s.playable.trackId.orEmpty(),
@@ -99,7 +99,7 @@ private val ScreenSaver: Saver<Screen, Any> = Saver(
         when (list.getOrNull(0) as? String ?: "home") {
             "scan" -> Screen.Scan
             "playback" -> {
-                val raw = list.getOrNull(1) as? String ?: ""
+                val rawUrl = list.getOrNull(1) as? String ?: ""
                 val kindName = list.getOrNull(2) as? String ?: ScanResolution.Kind.UNKNOWN.name
                 val kind = runCatching { ScanResolution.Kind.valueOf(kindName) }
                     .getOrDefault(ScanResolution.Kind.UNKNOWN)
@@ -112,7 +112,7 @@ private val ScreenSaver: Saver<Screen, Any> = Saver(
 
                 Screen.Playback(
                     playable = PlayableCard(
-                        raw = raw,
+                        rawUrl = rawUrl,
                         kind = kind,
                         cardId = cardId,
                         trackId = trackId,
@@ -173,23 +173,24 @@ fun GitsterApp(
 
                                 val res = repo.resolveFromRaw(rawInput = raw)
                                 val card = res.card
-                                if (card == null) {
+                                val spotifyUri = bestSpotifyUriString(rawUrl = res.raw, res = res, card = card)
+
+                                if (card == null && spotifyUri == null) {
                                     Toast.makeText(context, "No encontrada", Toast.LENGTH_SHORT).show()
                                 } else {
-                                    val uri = bestSpotifyUriString(res, card)
-                                    if (uri == null) {
-                                        Toast.makeText(context, "Carta encontrada pero sin Spotify URI", Toast.LENGTH_SHORT).show()
+                                    if (spotifyUri == null) {
+                                        Toast.makeText(context, "No se pudo resolver Spotify URI", Toast.LENGTH_SHORT).show()
                                     } else {
                                         screen = Screen.Playback(
                                             PlayableCard(
-                                                raw = res.raw,
+                                                rawUrl = res.raw,
                                                 kind = res.kind,
-                                                cardId = res.parsedCardId ?: card.cardId,
-                                                trackId = res.parsedTrackId ?: card.trackId,
-                                                spotifyUri = uri,
-                                                title = card.titleForUi(),
-                                                artists = card.artistsForUi(),
-                                                year = card.yearAsIntOrNull()
+                                                cardId = res.parsedCardId ?: card?.cardId,
+                                                trackId = res.parsedTrackId ?: card?.trackId,
+                                                spotifyUri = spotifyUri,
+                                                title = card?.titleForUi(),
+                                                artists = card?.artistsForUi(),
+                                                year = card?.yearAsIntOrNull()
                                             )
                                         )
                                     }
@@ -572,17 +573,17 @@ private fun NeonFlickerLogo(modifier: Modifier = Modifier) {
     }
 }
 
-private fun bestSpotifyUriString(res: ScanResolution, card: DeckCard?): String? {
+private fun bestSpotifyUriString(rawUrl: String, res: ScanResolution, card: DeckCard?): String? {
     val candidates = listOfNotNull(
-        card?.spotifyUri?.trim()?.takeIf { it.isNotBlank() },
-        card?.spotifyUrl?.trim()?.takeIf { it.isNotBlank() },
-        res.raw.trim().takeIf { it.startsWith("http", true) || it.startsWith("spotify:", true) },
+        resolveSpotifyTrackUri(rawUrl),
+        card?.spotifyUri?.trim()?.let(::resolveSpotifyTrackUri),
+        card?.spotifyUrl?.trim()?.let(::resolveSpotifyTrackUri),
+        res.raw.trim().takeIf { it.isNotBlank() }?.let(::resolveSpotifyTrackUri),
         (res.parsedTrackId ?: card?.trackId)?.trim()?.takeIf { it.isNotBlank() }?.let { "spotify:track:$it" }
     )
 
     for (c in candidates) {
-        val u = runCatching { Uri.parse(c) }.getOrNull() ?: continue
-        if (u.toString().isNotBlank()) return u.toString()
+        if (c.isNotBlank()) return c
     }
     return null
 }

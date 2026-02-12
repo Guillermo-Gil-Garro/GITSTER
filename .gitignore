@@ -29,3 +29,11 @@ pipeline/data/
 pipeline/processed/
 pipeline/reports/
 pipeline/cache/
+
+# Android Studio (local)
+.idea/
+
+# Local debug dumps
+logcat_full.txt
+pidlog.txt
+gitster_spotify_log.txt

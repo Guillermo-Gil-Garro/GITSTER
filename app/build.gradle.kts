@@ -1,23 +1,17 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
-    // Kotlin 2.0+ requires the Compose compiler plugin when Compose is enabled
     alias(libs.plugins.compose.compiler)
 }
 
-import java.util.Properties
-
 android {
     namespace = "com.gitster.dj"
-    // 36 (preview) suele romper en máquinas con SDKs estándar.
-    // Para MVP, apunta a un SDK estable instalado normalmente.
     compileSdk = 35
 
     defaultConfig {
         applicationId = "com.gitster.dj"
         minSdk = 24
         targetSdk = 35
-        // Bump para forzar update del launcher icon en dispositivos que cachean agresivo.
         versionCode = 3
         versionName = "1.2"
 
@@ -26,19 +20,8 @@ android {
             useSupportLibrary = true
         }
 
-        // Spotify (MVP-ready): se inyecta desde local.properties para que puedas pegar el Client ID
-        // sin tocar código. Si no existe, queda vacío y la app funciona igualmente.
-        val localProps = Properties()
-        val localPropsFile = rootProject.file("local.properties")
-        if (localPropsFile.exists()) {
-            runCatching { localPropsFile.inputStream().use { localProps.load(it) } }
-        }
-
-        val spotifyClientId = (localProps.getProperty("SPOTIFY_CLIENT_ID") ?: "").trim()
-        val spotifyRedirectUri = (localProps.getProperty("SPOTIFY_REDIRECT_URI") ?: "gitster://callback").trim()
-
-        buildConfigField("String", "SPOTIFY_CLIENT_ID", "\"${spotifyClientId}\"")
-        buildConfigField("String", "SPOTIFY_REDIRECT_URI", "\"${spotifyRedirectUri}\"")
+        buildConfigField("String", "SPOTIFY_CLIENT_ID", "\"7ea7ec0d13a24452ab34044dbc976bd9\"")
+        buildConfigField("String", "SPOTIFY_REDIRECT_URI", "\"gitster://callback\"")
     }
 
     buildTypes {
@@ -75,12 +58,10 @@ android {
 dependencies {
     val camerax = "1.3.4"
 
-    // Android basics
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
 
-    // Compose
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.graphics)
@@ -89,28 +70,20 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
 
-    // CameraX
     implementation("androidx.camera:camera-core:$camerax")
     implementation("androidx.camera:camera-camera2:$camerax")
     implementation("androidx.camera:camera-lifecycle:$camerax")
     implementation("androidx.camera:camera-view:$camerax")
 
-    // ML Kit QR
     implementation(libs.mlkit.barcode.scanning)
-
-    // Deck parsing + coroutines
     implementation("com.google.code.gson:gson:2.10.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
-
-    // Fallback para abrir links (Spotify)
     implementation("androidx.browser:browser:1.8.0")
+    implementation("androidx.datastore:datastore-preferences:1.1.1")
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
-    // Spotify App Remote (AAR local en app/libs/)
-    // MVP: desactivado para no introducir dependencias/errores de build antes de tiempo.
-    // (cuando toque, lo reactivamos y añadimos sus deps/transitives si hiciera falta)
-    // implementation(files("libs/spotify-app-remote-release-0.8.0.aar"))
+    implementation(files("libs/spotify-app-remote-release-0.8.0.aar"))
 
-    // Tests
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
