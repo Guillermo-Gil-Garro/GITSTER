@@ -285,11 +285,12 @@ def main():
     ensure_dirs()
 
     expansion = args.expansion
-    in_path = (
-        Path(args.input)
-        if args.input
-        else (PROCESSED_DIR / f"canonical_songs_{expansion}.csv")
-    )
+    if args.input:
+        in_path = Path(args.input)
+    else:
+        spotify_first = PROCESSED_DIR / f"canonical_songs_{expansion}_spotify.csv"
+        canonical_base = PROCESSED_DIR / f"canonical_songs_{expansion}.csv"
+        in_path = spotify_first if spotify_first.exists() else canonical_base
     out_path = (
         Path(args.output)
         if args.output

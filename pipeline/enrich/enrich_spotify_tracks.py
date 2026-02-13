@@ -1,13 +1,14 @@
+from __future__ import annotations
+
 import argparse
 import base64
 import json
 import os
-import random
 import re
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
 import requests
@@ -16,10 +17,25 @@ from dotenv import load_dotenv
 
 TRACK_ID_RE = re.compile(r"^[A-Za-z0-9]{22}$")
 TRACK_URL_RE = re.compile(r"open\.spotify\.com/track/([^/?]+)")
+TRACK_URI_RE = re.compile(r"spotify:track:([A-Za-z0-9]{22})")
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[2]
+
+
+REPO_ROOT = repo_root()
+PROCESSED_DIR = REPO_ROOT / "pipeline" / "data" / "processed"
+CACHE_DIR = REPO_ROOT / "pipeline" / "cache"
+REPORTS_DIR = REPO_ROOT / "pipeline" / "reports"
+
 
 ENRICH_COLUMNS = [
-    "artists_full",
+    "spotify_track_id",
+    "artists_all",
+    "artists_count",
     "artists_ids",
+    "artists_full_json",
     "album_id",
     "album_name",
     "album_release_date",
@@ -31,26 +47,136 @@ ENRICH_COLUMNS = [
 ]
 
 
-class RateLimitTooLongError(Exception):
-    def __init__(self, track_id: str, retry_after: float):
-        self.track_id = track_id
-        self.retry_after = retry_after
-        super().__init__(f"Retry-After too large for track_id={track_id}: {retry_after}")
+def clean_str(value: Any) -> str:
+    if value is None:
+        return ""
+    return str(value).strip()
+
+
+def parse_release_year(date_value: str) -> str:
+    date_s = clean_str(date_value)
+    if len(date_s) >= 4 and date_s[:4].isdigit():
+        return date_s[:4]
+    return ""
+
+
+def normalize_track_id(raw: Any) -> Optional[str]:
+    value = clean_str(raw)
+    if not value:
+        return None
+
+    if TRACK_ID_RE.fullmatch(value):
+        return value
+
+    uri_match = TRACK_URI_RE.search(value)
+    if uri_match:
+        candidate = clean_str(uri_match.group(1))
+        return candidate if TRACK_ID_RE.fullmatch(candidate) else None
+
+    url_match = TRACK_URL_RE.search(value)
+    if url_match:
+        candidate = clean_str(url_match.group(1)).split("?")[0]
+        return candidate if TRACK_ID_RE.fullmatch(candidate) else None
+
+    return None
+
+
+def first_valid_track_id(values: List[Any]) -> Optional[str]:
+    for raw in values:
+        track_id = normalize_track_id(raw)
+        if track_id:
+            return track_id
+    return None
+
+
+def list_linked_files(expansion: str) -> List[Path]:
+    pattern = PROCESSED_DIR / f"instances_linked_{expansion}_*.csv"
+    files = sorted(pattern.parent.glob(pattern.name))
+    if files:
+        return files
+
+    # Compatibilidad legacy.
+    legacy = PROCESSED_DIR / f"instances_linked_{expansion}_Guille.csv"
+    return [legacy] if legacy.exists() else []
+
+
+def build_track_id_map_from_linked(expansion: str) -> Dict[str, str]:
+    linked_files = list_linked_files(expansion)
+    if not linked_files:
+        return {}
+
+    mapping: Dict[str, str] = {}
+    for path in linked_files:
+        df = pd.read_csv(path).fillna("")
+        if "canonical_id" not in df.columns:
+            continue
+
+        for row in df.itertuples(index=False):
+            canonical_id = clean_str(getattr(row, "canonical_id", ""))
+            if not canonical_id or canonical_id in mapping:
+                continue
+
+            track_id = first_valid_track_id(
+                [
+                    getattr(row, "track_id", ""),
+                    getattr(row, "spotify_uri", ""),
+                    getattr(row, "spotify_url", ""),
+                ]
+            )
+            if track_id:
+                mapping[canonical_id] = track_id
+
+    return mapping
+
+
+def load_cache(path: Path) -> Dict[str, Dict[str, Any]]:
+    if not path.exists():
+        return {}
+
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+    if isinstance(payload, dict) and isinstance(payload.get("tracks"), dict):
+        tracks = payload["tracks"]
+    elif isinstance(payload, dict):
+        tracks = payload
+    else:
+        return {}
+
+    out: Dict[str, Dict[str, Any]] = {}
+    for key, value in tracks.items():
+        if isinstance(value, dict):
+            out[str(key)] = value
+    return out
+
+
+def save_cache(path: Path, cache: Dict[str, Dict[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "version": 2,
+        "updated_at": datetime.now().isoformat(timespec="seconds"),
+        "tracks": cache,
+    }
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp.replace(path)
 
 
 class SpotifyClient:
     def __init__(self, client_id: str, client_secret: str, timeout: float = 30.0):
-        self.client_id = client_id
-        self.client_secret = client_secret
-        self.timeout = timeout
+        self.client_id = clean_str(client_id)
+        self.client_secret = clean_str(client_secret)
+        self.timeout = float(timeout)
         self.session = requests.Session()
-        self.access_token: str | None = None
-        self.expires_at: float = 0.0
+        self._token: Optional[str] = None
+        self._expires_at = 0.0
 
     def get_token(self, force_refresh: bool = False) -> str:
         now = time.time()
-        if (not force_refresh) and self.access_token and now < (self.expires_at - 60):
-            return self.access_token
+        if (not force_refresh) and self._token and now < (self._expires_at - 60):
+            return self._token
 
         raw = f"{self.client_id}:{self.client_secret}".encode("utf-8")
         basic = base64.b64encode(raw).decode("ascii")
@@ -67,185 +193,89 @@ class SpotifyClient:
         resp.raise_for_status()
 
         payload = resp.json()
-        token = str(payload.get("access_token", "")).strip()
-        expires_in = int(payload.get("expires_in", 3600))
+        token = clean_str(payload.get("access_token"))
+        expires_in = int(payload.get("expires_in", 3600) or 3600)
         if not token:
-            raise RuntimeError("No access_token received from Spotify token endpoint")
+            raise RuntimeError("Spotify token endpoint did not return access_token")
 
-        self.access_token = token
-        self.expires_at = time.time() + max(60, expires_in)
+        self._token = token
+        self._expires_at = time.time() + max(60, expires_in)
         return token
 
-    def request_track(
+    def fetch_tracks_batch(
         self,
-        track_id: str,
+        track_ids: List[str],
         market: str,
         max_retry_after: int,
-        max_attempts: int = 8,
+        max_attempts: int = 6,
     ) -> requests.Response:
-        url = f"https://api.spotify.com/v1/tracks/{track_id}"
+        ids_param = ",".join(track_ids)
         refreshed_after_401 = False
-        last_exc: Exception | None = None
 
         for attempt in range(1, max_attempts + 1):
             token = self.get_token(force_refresh=False)
             headers = {"Authorization": f"Bearer {token}"}
-            try:
-                resp = self.session.get(
-                    url,
-                    params={"market": market},
-                    headers=headers,
-                    timeout=self.timeout,
-                )
-            except requests.RequestException as exc:
-                last_exc = exc
-                if attempt == max_attempts:
-                    break
-                sleep_s = min(30.0, 0.5 * (2 ** (attempt - 1))) + random.uniform(0.0, 0.35)
-                print(
-                    f"network_error track_id={track_id} attempt={attempt}/{max_attempts} "
-                    f"sleep={sleep_s:.2f}s error={exc}"
-                )
-                time.sleep(sleep_s)
-                continue
+            resp = self.session.get(
+                "https://api.spotify.com/v1/tracks",
+                params={"ids": ids_param, "market": market},
+                headers=headers,
+                timeout=self.timeout,
+            )
 
-            if resp.status_code == 401 and (not refreshed_after_401):
+            if resp.status_code == 401 and not refreshed_after_401:
                 self.get_token(force_refresh=True)
                 refreshed_after_401 = True
-                if attempt < max_attempts:
-                    continue
-
-            if resp.status_code == 429:
-                retry_after_raw = str(resp.headers.get("Retry-After", "")).strip()
-                retry_after = float(retry_after_raw) if retry_after_raw.isdigit() else 1.0
-                print(
-                    f"429 status=429 track_id={track_id} Retry-After={retry_after_raw or 'missing->1'}"
-                )
-
-                if retry_after > float(max_retry_after):
-                    raise RateLimitTooLongError(track_id=track_id, retry_after=retry_after)
-
-                if attempt == max_attempts:
-                    return resp
-
-                sleep_s = retry_after + random.uniform(0.0, 0.35)
-                print(
-                    f"rate_limit_wait track_id={track_id} attempt={attempt}/{max_attempts} "
-                    f"sleep={sleep_s:.2f}s"
-                )
-                time.sleep(sleep_s)
                 continue
 
-            if resp.status_code in (500, 502, 503, 504):
+            if resp.status_code == 429:
+                retry_after_raw = clean_str(resp.headers.get("Retry-After", "1"))
+                retry_after = int(retry_after_raw) if retry_after_raw.isdigit() else 1
+                if retry_after > int(max_retry_after):
+                    raise RuntimeError(
+                        f"Spotify Retry-After {retry_after}s exceeds max_retry_after={max_retry_after}"
+                    )
                 if attempt == max_attempts:
                     return resp
-                sleep_s = min(30.0, 0.5 * (2 ** (attempt - 1))) + random.uniform(0.0, 0.35)
-                print(
-                    f"server_error status={resp.status_code} track_id={track_id} "
-                    f"attempt={attempt}/{max_attempts} sleep={sleep_s:.2f}s"
-                )
-                time.sleep(sleep_s)
+                time.sleep(float(retry_after) + 0.2)
+                continue
+
+            if resp.status_code in {500, 502, 503, 504} and attempt < max_attempts:
+                backoff = min(20.0, 0.5 * (2 ** (attempt - 1)))
+                time.sleep(backoff + 0.2)
                 continue
 
             return resp
 
-        if last_exc is not None:
-            raise RuntimeError(f"HTTP request failed after retries: {last_exc}") from last_exc
-        raise RuntimeError("HTTP request failed after retries")
+        raise RuntimeError("Spotify /v1/tracks request exhausted retries")
 
 
-def repo_root() -> Path:
-    return Path(__file__).resolve().parents[2]
-
-
-REPO_ROOT = repo_root()
-PROCESSED_DIR = REPO_ROOT / "pipeline" / "data" / "processed"
-CACHE_PATH = REPO_ROOT / "pipeline" / "cache" / "spotify_tracks_cache.json"
-REPORTS_DIR = REPO_ROOT / "pipeline" / "reports"
-
-
-def clean_str(v: Any) -> str:
-    if v is None:
-        return ""
-    return str(v).strip()
-
-
-def normalize_track_id(raw: Any) -> str | None:
-    value = clean_str(raw)
-    if not value:
-        return None
-
-    if TRACK_ID_RE.fullmatch(value):
-        return value
-
-    if value.startswith("spotify:track:"):
-        candidate = value.split("spotify:track:", 1)[1].strip()
-        candidate = candidate.split("?")[0].split("/")[0]
-        return candidate if TRACK_ID_RE.fullmatch(candidate) else None
-
-    m = TRACK_URL_RE.search(value)
-    if m:
-        candidate = m.group(1).split("?")[0].strip()
-        return candidate if TRACK_ID_RE.fullmatch(candidate) else None
-
-    return None
-
-
-def extract_row_track_id(row: pd.Series) -> tuple[str | None, str, str]:
-    ordered = [
-        ("track_id", row.get("track_id", "")),
-        ("spotify_uri", row.get("spotify_uri", "")),
-        ("spotify_url", row.get("spotify_url", "")),
-    ]
-
-    first_invalid_value = ""
-    first_invalid_reason = ""
-
-    for source, raw in ordered:
-        raw_str = clean_str(raw)
-        if not raw_str:
-            continue
-
-        normalized = normalize_track_id(raw_str)
-        if normalized:
-            return normalized, raw_str, ""
-
-        if not first_invalid_value:
-            first_invalid_value = raw_str
-            first_invalid_reason = f"invalid_{source}_format"
-
-    if first_invalid_value:
-        return None, first_invalid_value, first_invalid_reason
-
-    return None, "", "missing_track_id_spotify_uri_spotify_url"
-
-
-def parse_release_year(release_date: str) -> int | str:
-    date_str = clean_str(release_date)
-    if len(date_str) >= 4 and date_str[:4].isdigit():
-        return int(date_str[:4])
-    return ""
-
-
-def parse_track_payload(track: dict[str, Any]) -> dict[str, Any]:
+def parse_track_payload(track: Dict[str, Any]) -> Dict[str, Any]:
     artists = track.get("artists") or []
-    artists_full = ", ".join(
-        clean_str(a.get("name"))
-        for a in artists
-        if isinstance(a, dict) and clean_str(a.get("name"))
-    )
-    artists_ids = ",".join(
-        clean_str(a.get("id"))
-        for a in artists
-        if isinstance(a, dict) and clean_str(a.get("id"))
-    )
+    artist_names: List[str] = []
+    artist_ids: List[str] = []
+    full_rows: List[Dict[str, str]] = []
+
+    for artist in artists:
+        if not isinstance(artist, dict):
+            continue
+        name = clean_str(artist.get("name"))
+        artist_id = clean_str(artist.get("id"))
+        if name:
+            artist_names.append(name)
+        if artist_id:
+            artist_ids.append(artist_id)
+        if name or artist_id:
+            full_rows.append({"id": artist_id, "name": name})
 
     album = track.get("album") or {}
     release_date = clean_str(album.get("release_date"))
 
     return {
-        "artists_full": artists_full,
-        "artists_ids": artists_ids,
+        "spotify_track_id": clean_str(track.get("id")),
+        "artists_all": ", ".join(artist_names),
+        "artists_count": int(len(artist_names)),
+        "artists_ids": ", ".join([a for a in artist_ids if a]),
+        "artists_full_json": json.dumps(full_rows, ensure_ascii=False),
         "album_id": clean_str(album.get("id")),
         "album_name": clean_str(album.get("name")),
         "album_release_date": release_date,
@@ -257,309 +287,241 @@ def parse_track_payload(track: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def load_cache(path: Path) -> dict[str, dict[str, Any]]:
-    if not path.exists():
-        return {}
-
-    try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        return {}
-
-    if isinstance(raw, dict) and isinstance(raw.get("tracks"), dict):
-        return {k: v for k, v in raw["tracks"].items() if isinstance(v, dict)}
-
-    if isinstance(raw, dict):
-        return {k: v for k, v in raw.items() if isinstance(v, dict)}
-
-    return {}
+def split_batches(items: List[str], batch_size: int) -> List[List[str]]:
+    bsize = max(1, min(50, int(batch_size)))
+    return [items[i : i + bsize] for i in range(0, len(items), bsize)]
 
 
-def save_cache(path: Path, cache: dict[str, dict[str, Any]]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    payload = {
-        "version": 1,
-        "updated_at": datetime.now().isoformat(timespec="seconds"),
-        "tracks": cache,
-    }
-    tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-    tmp.replace(path)
+def extract_row_track_ids(df: pd.DataFrame, linked_map: Dict[str, str]) -> List[Optional[str]]:
+    out: List[Optional[str]] = []
+    for row in df.itertuples(index=False):
+        canonical_id = clean_str(getattr(row, "canonical_id", ""))
+        row_track = first_valid_track_id(
+            [
+                getattr(row, "track_id", ""),
+                getattr(row, "spotify_uri", ""),
+                getattr(row, "spotify_url", ""),
+            ]
+        )
+        if row_track:
+            out.append(row_track)
+            continue
 
-
-def build_input_path(owner: str) -> Path:
-    return PROCESSED_DIR / f"spotify_liked_songs_from_export_{owner}.csv"
-
-
-def build_output_path(owner: str) -> Path:
-    return PROCESSED_DIR / f"spotify_liked_songs_from_export_{owner}_enriched.csv"
-
-
-def build_invalid_report_path(owner: str) -> Path:
-    return REPORTS_DIR / f"enrich_invalid_track_ids_{owner}.csv"
-
-
-def build_failed_report_path(owner: str) -> Path:
-    return REPORTS_DIR / f"enrich_failed_{owner}.csv"
-
-
-def merge_enrichment(df: pd.DataFrame, row_track_ids: list[str | None], data_map: dict[str, dict[str, Any]]) -> pd.DataFrame:
-    out = df.copy()
-    for col in ENRICH_COLUMNS:
-        out[col] = [
-            data_map.get(track_id, {}).get(col, "") if track_id else ""
-            for track_id in row_track_ids
-        ]
+        linked_track = linked_map.get(canonical_id, "")
+        out.append(clean_str(linked_track) or None)
     return out
 
 
-def write_partial_enriched(
-    df: pd.DataFrame,
-    row_track_ids: list[str | None],
-    enriched_map: dict[str, dict[str, Any]],
-    out_path: Path,
-) -> None:
-    partial_df = merge_enrichment(df, row_track_ids, enriched_map)
-    partial_df.to_csv(out_path, index=False, encoding="utf-8")
+def enrich_rows(df: pd.DataFrame, row_track_ids: List[Optional[str]], cache: Dict[str, Dict[str, Any]]) -> pd.DataFrame:
+    out = df.copy()
+    defaults: Dict[str, Any] = {
+        "spotify_track_id": "",
+        "artists_all": "",
+        "artists_count": 0,
+        "artists_ids": "",
+        "artists_full_json": "",
+        "album_id": "",
+        "album_name": "",
+        "album_release_date": "",
+        "album_release_year": "",
+        "duration_ms": "",
+        "explicit": "",
+        "popularity": "",
+        "preview_url": "",
+    }
+
+    rows: List[Dict[str, Any]] = []
+    for track_id in row_track_ids:
+        if not track_id:
+            rows.append(dict(defaults))
+            continue
+
+        entry = cache.get(track_id, {})
+        if not isinstance(entry, dict) or entry.get("_error"):
+            row = dict(defaults)
+            row["spotify_track_id"] = track_id
+            rows.append(row)
+            continue
+
+        row = dict(defaults)
+        for key in ENRICH_COLUMNS:
+            if key in entry:
+                row[key] = entry.get(key, defaults.get(key, ""))
+        if (not clean_str(row.get("artists_all", ""))) and clean_str(entry.get("artists_full", "")):
+            row["artists_all"] = clean_str(entry.get("artists_full", ""))
+        if (not clean_str(row.get("artists_ids", ""))) and clean_str(entry.get("artists_ids", "")):
+            row["artists_ids"] = clean_str(entry.get("artists_ids", ""))
+        if not clean_str(row.get("spotify_track_id", "")):
+            row["spotify_track_id"] = track_id
+        try:
+            row["artists_count"] = int(float(row.get("artists_count", 0) or 0))
+        except Exception:
+            row["artists_count"] = 0
+        if row["artists_count"] <= 0 and clean_str(row.get("artists_all", "")):
+            row["artists_count"] = len([p for p in row["artists_all"].split(",") if clean_str(p)])
+        rows.append(row)
+
+    enrich_df = pd.DataFrame(rows)
+    for col in ENRICH_COLUMNS:
+        if col not in enrich_df.columns:
+            enrich_df[col] = defaults[col]
+    for col in ENRICH_COLUMNS:
+        out[col] = enrich_df[col]
+    return out
 
 
 def parse_args() -> argparse.Namespace:
-    ap = argparse.ArgumentParser(description="Enrich Spotify export tracks using /v1/tracks/{id}.")
-    ap.add_argument("--owner", required=True, help="Owner label used in input/output filenames")
-    ap.add_argument("--market", default="ES", help="Spotify market (default: ES)")
-    ap.add_argument("--sleep", type=float, default=0.6, help="Sleep between calls in seconds (default: 0.6)")
-    ap.add_argument("--limit", type=int, default=None, help="Optional max number of unique track IDs to process")
-    ap.add_argument("--force-refresh", action="store_true", help="Ignore cache and fetch all IDs again")
-    ap.add_argument("--progress-every", type=int, default=50, help="Progress print frequency (default: 50)")
+    ap = argparse.ArgumentParser(description="Enrich canonical songs with Spotify /v1/tracks batch metadata.")
+    ap.add_argument("--expansion", default="I")
+    ap.add_argument("--input", default=None, help="Default: pipeline/data/processed/canonical_songs_{EXP}.csv")
     ap.add_argument(
-        "--max-retry-after",
-        type=int,
-        default=900,
-        help="Abort if Spotify Retry-After is greater than this number of seconds (default: 900)",
+        "--output",
+        default=None,
+        help="Default: pipeline/data/processed/canonical_songs_{EXP}_spotify.csv",
     )
+    ap.add_argument(
+        "--cache",
+        default=str(CACHE_DIR / "spotify_tracks_cache.json"),
+        help="JSON cache path for Spotify tracks responses.",
+    )
+    ap.add_argument("--market", default="ES")
+    ap.add_argument("--batch-size", type=int, default=50, help="Max 50 by Spotify API contract.")
+    ap.add_argument("--sleep", type=float, default=0.25, help="Sleep between batch requests.")
+    ap.add_argument("--progress-every", type=int, default=10)
+    ap.add_argument("--limit", type=int, default=0, help="Process only first N unique track IDs (0=all).")
+    ap.add_argument("--force-refresh", action="store_true", help="Ignore cache entries and refetch from API.")
+    ap.add_argument("--max-retry-after", type=int, default=900)
     return ap.parse_args()
 
 
 def main() -> None:
     args = parse_args()
+    expansion = clean_str(args.expansion) or "I"
 
-    load_dotenv()
-    client_id = clean_str(os.getenv("SPOTIFY_CLIENT_ID"))
-    client_secret = clean_str(os.getenv("SPOTIFY_CLIENT_SECRET"))
-    if not client_id or not client_secret:
-        raise SystemExit("Missing SPOTIFY_CLIENT_ID or SPOTIFY_CLIENT_SECRET in .env")
+    in_path = Path(args.input) if args.input else (PROCESSED_DIR / f"canonical_songs_{expansion}.csv")
+    out_path = Path(args.output) if args.output else (PROCESSED_DIR / f"canonical_songs_{expansion}_spotify.csv")
+    cache_path = Path(args.cache)
 
-    in_path = build_input_path(args.owner)
     if not in_path.exists():
-        raise SystemExit(f"Input CSV not found: {in_path}")
+        raise FileNotFoundError(f"Input canonical songs not found: {in_path}")
 
-    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
     df = pd.read_csv(in_path).fillna("")
+    if "canonical_id" not in df.columns:
+        raise ValueError(f"{in_path} must include canonical_id")
+    df["canonical_id"] = df["canonical_id"].astype(str).str.strip()
 
-    row_track_ids: list[str | None] = []
-    invalid_rows: list[dict[str, Any]] = []
+    linked_map = build_track_id_map_from_linked(expansion)
+    row_track_ids = extract_row_track_ids(df, linked_map)
 
-    for idx, row in df.iterrows():
-        track_id, raw_value, reason = extract_row_track_id(row)
-        row_track_ids.append(track_id)
-        if track_id is None:
-            invalid_rows.append(
-                {
-                    "row_index": int(idx),
-                    "raw_value": raw_value,
-                    "reason": reason,
-                }
-            )
-
-    ordered_unique_ids: list[str] = []
+    unique_ids: List[str] = []
     seen: set[str] = set()
-    for tid in row_track_ids:
-        if tid and tid not in seen:
-            seen.add(tid)
-            ordered_unique_ids.append(tid)
+    for track_id in row_track_ids:
+        if track_id and track_id not in seen:
+            seen.add(track_id)
+            unique_ids.append(track_id)
 
-    if args.limit is not None and args.limit >= 0:
-        ordered_unique_ids = ordered_unique_ids[: args.limit]
-        selected = set(ordered_unique_ids)
+    if int(args.limit) > 0:
+        unique_ids = unique_ids[: int(args.limit)]
+        selected = set(unique_ids)
         row_track_ids = [tid if (tid in selected) else None for tid in row_track_ids]
 
-    cache = load_cache(CACHE_PATH)
-    client = SpotifyClient(client_id=client_id, client_secret=client_secret)
+    cache = load_cache(cache_path)
 
-    enriched_map: dict[str, dict[str, Any]] = {}
-    failed_rows: list[dict[str, Any]] = []
+    to_fetch = [
+        track_id
+        for track_id in unique_ids
+        if bool(args.force_refresh)
+        or track_id not in cache
+        or (isinstance(cache.get(track_id), dict) and cache.get(track_id, {}).get("_error"))
+    ]
 
-    from_cache = 0
-    fetched_ok = 0
-    processed = 0
-    aborted = False
-    abort_message = ""
+    if to_fetch:
+        load_dotenv()
+        client_id = clean_str(os.getenv("SPOTIFY_CLIENT_ID"))
+        client_secret = clean_str(os.getenv("SPOTIFY_CLIENT_SECRET"))
+        if not client_id or not client_secret:
+            raise SystemExit("Missing SPOTIFY_CLIENT_ID or SPOTIFY_CLIENT_SECRET in environment/.env")
 
-    out_path = build_output_path(args.owner)
+        client = SpotifyClient(client_id=client_id, client_secret=client_secret)
+        batches = split_batches(to_fetch, int(args.batch_size))
 
-    for track_id in ordered_unique_ids:
-        processed += 1
-
-        if (not args.force_refresh) and track_id in cache:
-            entry = cache.get(track_id, {})
-            if isinstance(entry, dict) and entry.get("_error"):
-                failed_rows.append(
-                    {
-                        "track_id": track_id,
-                        "reason": clean_str(entry.get("_error")),
-                        "status_code": entry.get("status_code", ""),
-                        "detail": clean_str(entry.get("detail", "")),
-                    }
-                )
-            else:
-                enriched_map[track_id] = entry
-            from_cache += 1
-        else:
+        for i, batch_ids in enumerate(batches, start=1):
             try:
-                resp = client.request_track(
-                    track_id=track_id,
-                    market=args.market,
-                    max_retry_after=args.max_retry_after,
+                resp = client.fetch_tracks_batch(
+                    track_ids=batch_ids,
+                    market=clean_str(args.market) or "ES",
+                    max_retry_after=int(args.max_retry_after),
                 )
-            except RateLimitTooLongError as exc:
-                reason = "rate_limited_too_long"
-                detail = f"Retry-After={int(exc.retry_after)}"
-                failed_rows.append(
-                    {
-                        "track_id": track_id,
-                        "reason": reason,
-                        "status_code": 429,
-                        "detail": detail,
-                    }
-                )
-                cache[track_id] = {"_error": reason, "status_code": 429, "detail": detail}
-
-                save_cache(CACHE_PATH, cache)
-                write_partial_enriched(df, row_track_ids, enriched_map, out_path)
-
-                aborted = True
-                abort_message = (
-                    f"rate-limited; reintentar más tarde "
-                    f"(track_id={track_id}, Retry-After={int(exc.retry_after)}s > max={args.max_retry_after}s)"
-                )
-                print(abort_message)
-                break
             except Exception as exc:
-                detail = f"request_exception: {exc}"
-                failed_rows.append(
-                    {
-                        "track_id": track_id,
-                        "reason": "request_exception",
+                for track_id in batch_ids:
+                    cache[track_id] = {
+                        "_error": "request_exception",
                         "status_code": "",
-                        "detail": detail,
+                        "detail": clean_str(exc),
                     }
-                )
-                cache[track_id] = {"_error": "request_exception", "status_code": "", "detail": detail}
-                if args.sleep > 0:
-                    time.sleep(args.sleep)
-                if processed % 10 == 0:
-                    save_cache(CACHE_PATH, cache)
-                if processed % 50 == 0:
-                    write_partial_enriched(df, row_track_ids, enriched_map, out_path)
-                if args.progress_every > 0 and (processed % args.progress_every == 0):
-                    print(f"processed {processed}/{len(ordered_unique_ids)}")
+                save_cache(cache_path, cache)
                 continue
 
             if resp.status_code == 200:
                 payload = resp.json()
-                parsed = parse_track_payload(payload)
-                enriched_map[track_id] = parsed
-                cache[track_id] = parsed
-                fetched_ok += 1
-            elif resp.status_code == 404:
-                cache[track_id] = {
-                    "_error": "not_found",
-                    "status_code": 404,
-                    "detail": "",
-                }
-                failed_rows.append(
-                    {
-                        "track_id": track_id,
-                        "reason": "not_found",
-                        "status_code": 404,
-                        "detail": "",
-                    }
-                )
-            elif resp.status_code == 403:
-                body = clean_str(resp.text)[:1000]
-                cache[track_id] = {
-                    "_error": "forbidden_single",
-                    "status_code": 403,
-                    "detail": body,
-                }
-                failed_rows.append(
-                    {
-                        "track_id": track_id,
-                        "reason": "forbidden_single",
-                        "status_code": 403,
-                        "detail": body,
-                    }
-                )
+                tracks = payload.get("tracks") or []
+                for track_id, track_obj in zip(batch_ids, tracks):
+                    if isinstance(track_obj, dict):
+                        cache[track_id] = parse_track_payload(track_obj)
+                    else:
+                        cache[track_id] = {
+                            "_error": "not_found",
+                            "status_code": 404,
+                            "detail": "",
+                        }
             else:
-                body = clean_str(resp.text)[:1000]
-                reason = f"http_{resp.status_code}"
-                cache[track_id] = {
-                    "_error": reason,
-                    "status_code": resp.status_code,
-                    "detail": body,
-                }
-                failed_rows.append(
-                    {
-                        "track_id": track_id,
-                        "reason": reason,
-                        "status_code": resp.status_code,
-                        "detail": body,
+                status = int(resp.status_code)
+                detail = clean_str(resp.text)[:1000]
+                for track_id in batch_ids:
+                    cache[track_id] = {
+                        "_error": f"http_{status}",
+                        "status_code": status,
+                        "detail": detail,
                     }
-                )
 
-            if args.sleep > 0:
-                time.sleep(args.sleep)
+            save_cache(cache_path, cache)
+            if float(args.sleep) > 0:
+                time.sleep(float(args.sleep))
+            if int(args.progress_every) > 0 and (i % int(args.progress_every) == 0 or i == len(batches)):
+                print(f"[spotify_tracks] batches {i}/{len(batches)}")
 
-        if processed % 10 == 0:
-            save_cache(CACHE_PATH, cache)
-        if processed % 50 == 0:
-            write_partial_enriched(df, row_track_ids, enriched_map, out_path)
+    enriched = enrich_rows(df=df, row_track_ids=row_track_ids, cache=cache)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    enriched.to_csv(out_path, index=False, encoding="utf-8")
 
-        if args.progress_every > 0 and (processed % args.progress_every == 0):
-            print(f"processed {processed}/{len(ordered_unique_ids)}")
+    missing_track_id = int(sum(1 for v in row_track_ids if not v))
+    failed_unique = int(
+        sum(1 for tid in unique_ids if isinstance(cache.get(tid), dict) and cache.get(tid, {}).get("_error"))
+    )
 
-    save_cache(CACHE_PATH, cache)
-    write_partial_enriched(df, row_track_ids, enriched_map, out_path)
-
-    invalid_path = build_invalid_report_path(args.owner)
-    pd.DataFrame(invalid_rows, columns=["row_index", "raw_value", "reason"]).to_csv(
-        invalid_path,
+    failed_rows = [
+        {"track_id": tid, "reason": cache.get(tid, {}).get("_error", ""), "status_code": cache.get(tid, {}).get("status_code", "")}
+        for tid in unique_ids
+        if isinstance(cache.get(tid), dict) and cache.get(tid, {}).get("_error")
+    ]
+    failed_report_path = REPORTS_DIR / f"spotify_tracks_failed_{expansion}.csv"
+    pd.DataFrame(failed_rows, columns=["track_id", "reason", "status_code"]).to_csv(
+        failed_report_path,
         index=False,
         encoding="utf-8",
     )
 
-    failed_path = build_failed_report_path(args.owner)
-    pd.DataFrame(failed_rows, columns=["track_id", "reason", "status_code", "detail"]).to_csv(
-        failed_path,
-        index=False,
-        encoding="utf-8",
-    )
-
-    print("QC summary")
-    print(f"total_rows={len(df)}")
-    print(f"unique_ids={len(ordered_unique_ids)}")
-    print(f"from_cache={from_cache}")
-    print(f"fetched_ok={fetched_ok}")
-    print(f"invalid_ids={len(invalid_rows)}")
-    print(f"failed={len(failed_rows)}")
-    print(f"out_csv={out_path}")
-    print(f"invalid_report={invalid_path}")
-    print(f"failed_report={failed_path}")
-
-    if aborted:
-        raise SystemExit(f"rate-limited; reintentar más tarde. {abort_message}")
+    print(f"[spotify_tracks] input={in_path}")
+    print(f"[spotify_tracks] output={out_path}")
+    print(f"[spotify_tracks] cache={cache_path}")
+    print(f"[spotify_tracks] linked_track_ids={len(linked_map)}")
+    print(f"[spotify_tracks] total_rows={len(df)} unique_track_ids={len(unique_ids)}")
+    print(f"[spotify_tracks] missing_track_id_rows={missing_track_id} failed_unique_track_ids={failed_unique}")
+    print(f"[spotify_tracks] failed_report={failed_report_path}")
 
 
 if __name__ == "__main__":

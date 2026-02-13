@@ -42,6 +42,81 @@ KEEP_DISTINCT_PATTERNS = [
     r"\bnightcore\b",
 ]
 
+TITLE_STOPWORDS = {
+    "a",
+    "al",
+    "an",
+    "and",
+    "as",
+    "at",
+    "by",
+    "con",
+    "da",
+    "das",
+    "de",
+    "del",
+    "di",
+    "do",
+    "dos",
+    "e",
+    "el",
+    "en",
+    "for",
+    "in",
+    "la",
+    "las",
+    "los",
+    "of",
+    "on",
+    "or",
+    "para",
+    "por",
+    "the",
+    "to",
+    "u",
+    "un",
+    "una",
+    "unos",
+    "unas",
+    "y",
+}
+
+WORD_TOKEN_RE = re.compile(r"[A-Za-zÀ-ÖØ-öø-ÿ0-9]+(?:'[A-Za-zÀ-ÖØ-öø-ÿ0-9]+)?")
+DASH_WITH_SPACES_RE = re.compile(r"\s+[–—-]\s+")
+
+ACRONYM_KEEP = {
+    "DJ",
+    "EP",
+    "LP",
+    "OST",
+    "TV",
+    "UK",
+    "USA",
+}
+
+ROMAN_NUMERALS_KEEP = {
+    "I",
+    "II",
+    "III",
+    "IV",
+    "V",
+    "VI",
+    "VII",
+    "VIII",
+    "IX",
+    "X",
+    "XI",
+    "XII",
+    "XIII",
+    "XIV",
+    "XV",
+    "XVI",
+    "XVII",
+    "XVIII",
+    "XIX",
+    "XX",
+}
+
 
 def pick_first_nonempty(series: pd.Series) -> str:
     for value in series.fillna("").astype(str).tolist():
@@ -101,11 +176,197 @@ def owners_to_display(owners: Iterable[str]) -> str:
     return ", ".join(vals)
 
 
+def normalize_quotes_and_spaces(text: str) -> str:
+    out = str(text or "")
+    replacements = {
+        "\u2018": "'",
+        "\u2019": "'",
+        "\u201c": '"',
+        "\u201d": '"',
+        "\u00b4": "'",
+        "\u0060": "'",
+        "\u00a0": " ",
+        "\u2007": " ",
+        "\u202f": " ",
+        "\u2009": " ",
+        "\u200a": " ",
+        "\u200b": " ",
+    }
+    for src, dst in replacements.items():
+        out = out.replace(src, dst)
+    out = SPACE_RE.sub(" ", out).strip()
+    return out
+
+
+def normalize_dash_separator(text: str) -> str:
+    out = str(text or "")
+    out = DASH_WITH_SPACES_RE.sub(" - ", out)
+    out = SPACE_RE.sub(" ", out).strip()
+    return out
+
+
+def mostly_upper_or_lower(text: str) -> bool:
+    letters = [ch for ch in str(text or "") if ch.isalpha()]
+    if not letters:
+        return False
+    upper = sum(1 for ch in letters if ch.isupper())
+    lower = sum(1 for ch in letters if ch.islower())
+    ratio_upper = upper / len(letters)
+    ratio_lower = lower / len(letters)
+    if ratio_upper >= 0.65 or ratio_lower >= 0.65:
+        return True
+    return bool(re.search(r"[a-z][A-Z]", str(text or "")))
+
+
+def is_roman_or_acronym_token(token: str) -> bool:
+    core = str(token or "").strip()
+    if not core:
+        return False
+    if core.upper() in ROMAN_NUMERALS_KEEP:
+        return True
+    if core.upper() in ACRONYM_KEEP:
+        return True
+    if core.isalpha() and core.isupper() and 2 <= len(core) <= 5:
+        return True
+    return False
+
+
+def title_case_core_token(token: str, is_first_word: bool) -> str:
+    raw = str(token or "")
+    if not raw:
+        return raw
+    if raw.isdigit():
+        return raw
+
+    low = raw.lower()
+    up = raw.upper()
+
+    if is_roman_or_acronym_token(raw):
+        return up
+    if (not is_first_word) and low in TITLE_STOPWORDS:
+        return low
+
+    if "'" in low:
+        parts = [p for p in low.split("'")]
+        if len(parts) == 2 and len(parts[1]) <= 2:
+            left = parts[0][:1].upper() + parts[0][1:] if parts[0] else ""
+            right = parts[1]
+            return f"{left}'{right}" if left or right else raw
+        out_parts: List[str] = []
+        for i, part in enumerate(parts):
+            if not part:
+                out_parts.append(part)
+                continue
+            if i > 0 and part in TITLE_STOPWORDS:
+                out_parts.append(part)
+            else:
+                out_parts.append(part[:1].upper() + part[1:])
+        return "'".join(out_parts)
+
+    return low[:1].upper() + low[1:]
+
+
+def apply_word_transform(text: str, transform) -> str:
+    out_parts: List[str] = []
+    cursor = 0
+    word_idx = 0
+    for match in WORD_TOKEN_RE.finditer(str(text or "")):
+        out_parts.append(text[cursor : match.start()])
+        token = match.group(0)
+        out_parts.append(transform(token, word_idx == 0))
+        cursor = match.end()
+        word_idx += 1
+    out_parts.append(text[cursor:])
+    return "".join(out_parts)
+
+
+def apply_stopword_lowering_only(text: str) -> str:
+    def _transform(token: str, is_first_word: bool) -> str:
+        if is_roman_or_acronym_token(token):
+            return token.upper()
+        if (not is_first_word) and token.lower() in TITLE_STOPWORDS:
+            return token.lower()
+        return token
+
+    return apply_word_transform(text, _transform)
+
+
+def smart_title_case(text: str) -> str:
+    return apply_word_transform(text, title_case_core_token)
+
+
 def clean_title_display(title: str) -> str:
-    text = str(title or "").strip()
-    text = FEAT_BRACKET_RE.sub("", text)
+    text = normalize_quotes_and_spaces(str(title or ""))
+    text = normalize_dash_separator(text)
+    if " - " in text:
+        text = text.split(" - ", 1)[0].strip()
+    if mostly_upper_or_lower(text):
+        text = smart_title_case(text)
+    else:
+        text = apply_stopword_lowering_only(text)
     text = SPACE_RE.sub(" ", text).strip()
     return text
+
+
+def split_artists_text(text: str) -> List[str]:
+    raw = str(text or "").strip()
+    if not raw:
+        return []
+    for sep in ["|", ";", "/", "\\"]:
+        raw = raw.replace(sep, ",")
+    vals: List[str] = []
+    for item in raw.split(","):
+        v = str(item).strip()
+        if not v:
+            continue
+        if v not in vals:
+            vals.append(v)
+    return vals
+
+
+def artists_from_full_json(raw: object) -> List[str]:
+    text = str(raw or "").strip()
+    if not text:
+        return []
+    if not (text.startswith("[") and text.endswith("]")):
+        return []
+    try:
+        arr = json.loads(text)
+    except Exception:
+        return []
+    if not isinstance(arr, list):
+        return []
+    names: List[str] = []
+    for row in arr:
+        if not isinstance(row, dict):
+            continue
+        name = str(row.get("name", "")).strip()
+        if name and name not in names:
+            names.append(name)
+    return names
+
+
+def parse_int(value: object, default: int = 0) -> int:
+    try:
+        return int(float(value))
+    except Exception:
+        return default
+
+
+def build_artists_display(artists: List[str], artists_count: int) -> str:
+    names = [str(a).strip() for a in artists if str(a).strip()]
+    if not names:
+        return ""
+
+    count = int(artists_count) if int(artists_count) > 0 else len(names)
+    if count <= 3 or len(names) <= 3:
+        return ", ".join(names[: max(1, min(len(names), count))])
+
+    shown = names[:3]
+    extra = max(0, count - 3)
+    if extra <= 0:
+        return ", ".join(shown)
+    return f"{', '.join(shown)} +{extra}"
 
 
 def normalize_basic(text: str) -> str:
@@ -179,6 +440,40 @@ def build_album_key(album_id: str, album_name: str, canonical_id: str) -> str:
         return f"name::{aname}"
 
     return f"cid::{str(canonical_id or '').strip()}"
+
+
+def load_manual_title_overrides(path: Path) -> Dict[str, Dict[str, str]]:
+    if not path.exists():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        pd.DataFrame(columns=["canonical_id", "title_display", "artists_display"]).to_csv(
+            path,
+            index=False,
+            encoding="utf-8",
+        )
+        return {}
+
+    df = pd.read_csv(path).fillna("")
+    if df.empty:
+        return {}
+
+    if "canonical_id" not in df.columns:
+        return {}
+
+    if "title_display" not in df.columns:
+        df["title_display"] = ""
+    if "artists_display" not in df.columns:
+        df["artists_display"] = ""
+
+    out: Dict[str, Dict[str, str]] = {}
+    for row in df.itertuples(index=False):
+        cid = str(getattr(row, "canonical_id", "")).strip()
+        if not cid:
+            continue
+        out[cid] = {
+            "title_display": str(getattr(row, "title_display", "")).strip(),
+            "artists_display": str(getattr(row, "artists_display", "")).strip(),
+        }
+    return out
 
 
 def load_linked_instances(expansion: str, owner_legacy: str, input_linked: Optional[str]) -> pd.DataFrame:
@@ -281,7 +576,12 @@ def prepare_linked_summary(linked: pd.DataFrame) -> Tuple[pd.DataFrame, List[str
     return summary, owners_universe
 
 
-def build_candidates(canon: pd.DataFrame, linked_summary: pd.DataFrame, expansion: str) -> pd.DataFrame:
+def build_candidates(
+    canon: pd.DataFrame,
+    linked_summary: pd.DataFrame,
+    expansion: str,
+    title_overrides: Dict[str, Dict[str, str]],
+) -> pd.DataFrame:
     canon = canon.copy().fillna("")
     if "canonical_id" not in canon.columns:
         raise ValueError("canonical input must contain canonical_id")
@@ -289,13 +589,38 @@ def build_candidates(canon: pd.DataFrame, linked_summary: pd.DataFrame, expansio
     canon["canonical_id"] = canon["canonical_id"].astype(str).str.strip()
     canon = canon[canon["canonical_id"] != ""].copy()
 
-    for col in ["title_canon", "artists_canon", "year", "year_confidence", "year_source", "year_note", "album_id", "album_name"]:
+    for col in [
+        "title_canon",
+        "artists_canon",
+        "artists_all",
+        "artists_count",
+        "artists_ids",
+        "artists_full_json",
+        "year",
+        "year_confidence",
+        "year_source",
+        "year_note",
+        "album_id",
+        "album_name",
+    ]:
         if col not in canon.columns:
             canon[col] = ""
 
     out = canon.merge(linked_summary, on="canonical_id", how="left")
 
-    for col in ["spotify_url", "spotify_uri", "track_id", "album_id", "album_name", "owners", "year_source", "year_note"]:
+    for col in [
+        "spotify_url",
+        "spotify_uri",
+        "track_id",
+        "album_id",
+        "album_name",
+        "owners",
+        "year_source",
+        "year_note",
+        "artists_all",
+        "artists_ids",
+        "artists_full_json",
+    ]:
         if col not in out.columns:
             out[col] = ""
         out[col] = out[col].fillna("").astype(str)
@@ -304,7 +629,7 @@ def build_candidates(canon: pd.DataFrame, linked_summary: pd.DataFrame, expansio
         out["owners_list"] = [[] for _ in range(len(out))]
     out["owners_list"] = out["owners_list"].apply(lambda x: x if isinstance(x, list) else parse_owners_field(x))
 
-    for col in ["owners_count", "instances_count"]:
+    for col in ["owners_count", "instances_count", "artists_count"]:
         if col not in out.columns:
             out[col] = 0
         out[col] = pd.to_numeric(out[col], errors="coerce").fillna(0).astype(int)
@@ -312,8 +637,44 @@ def build_candidates(canon: pd.DataFrame, linked_summary: pd.DataFrame, expansio
     out["year_confidence"] = out["year_confidence"].apply(parse_float)
     out["year_int"] = out["year"].apply(parse_year_int)
 
-    out["title_display"] = out["title_canon"].astype(str).apply(clean_title_display)
-    out["artists_display"] = out["artists_canon"].astype(str).str.strip()
+    out["artists_all"] = out["artists_all"].astype(str).str.strip()
+    out["artists_canon"] = out["artists_canon"].astype(str).str.strip()
+    out.loc[out["artists_all"].eq(""), "artists_all"] = out["artists_canon"]
+    out["artists_count"] = out["artists_count"].astype(int)
+    for idx, row in out.iterrows():
+        if int(row.get("artists_count", 0)) > 0:
+            continue
+        inferred = len(split_artists_text(row.get("artists_all", "")))
+        out.at[idx, "artists_count"] = inferred
+
+    out["title_original"] = out["title_canon"].astype(str).str.strip()
+    out["title_display"] = out["title_original"].astype(str).apply(clean_title_display)
+
+    def _artists_display_from_row(row: pd.Series) -> str:
+        artists_from_json = artists_from_full_json(row.get("artists_full_json", ""))
+        artists_from_all = split_artists_text(row.get("artists_all", ""))
+        artists_from_canon = split_artists_text(row.get("artists_canon", ""))
+        artists = artists_from_json or artists_from_all or artists_from_canon
+        count = parse_int(row.get("artists_count", 0), default=0)
+        if count <= 0:
+            count = len(artists)
+        return build_artists_display(artists, count)
+
+    out["artists_display"] = out.apply(_artists_display_from_row, axis=1)
+    out["artists_display"] = out["artists_display"].astype(str).str.strip()
+    out.loc[out["artists_display"].eq(""), "artists_display"] = out["artists_canon"].astype(str).str.strip()
+
+    if title_overrides:
+        for canonical_id, override in title_overrides.items():
+            mask = out["canonical_id"].eq(canonical_id)
+            if not mask.any():
+                continue
+            title_override = str(override.get("title_display", "")).strip()
+            artists_override = str(override.get("artists_display", "")).strip()
+            if title_override:
+                out.loc[mask, "title_display"] = title_override
+            if artists_override:
+                out.loc[mask, "artists_display"] = artists_override
     out["has_spotify_url"] = out["spotify_url"].astype(str).str.strip().ne("").astype(int)
 
     out["owners"] = out["owners_list"].apply(owners_to_display)
@@ -541,6 +902,35 @@ def select_deck(
     return selected, stats
 
 
+def write_title_normalization_sample(candidates: pd.DataFrame, expansion: str) -> Path:
+    sample_path = REPORTS_DIR / f"title_normalization_sample_{expansion}.csv"
+    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+
+    if candidates.empty:
+        pd.DataFrame(columns=["canonical_id", "title_original", "title_display"]).to_csv(
+            sample_path,
+            index=False,
+            encoding="utf-8",
+        )
+        return sample_path
+
+    if "title_original" not in candidates.columns:
+        candidates = candidates.copy()
+        if "title_canon" in candidates.columns:
+            candidates["title_original"] = candidates["title_canon"].astype(str)
+        else:
+            candidates["title_original"] = ""
+
+    diffs = candidates[
+        candidates["title_original"].astype(str).str.strip()
+        != candidates["title_display"].astype(str).str.strip()
+    ][["canonical_id", "title_original", "title_display"]].copy()
+
+    diffs = diffs.sort_values("canonical_id").head(50)
+    diffs.to_csv(sample_path, index=False, encoding="utf-8")
+    return sample_path
+
+
 def write_deck_reports(
     valid_pool: pd.DataFrame,
     deck_out: pd.DataFrame,
@@ -613,7 +1003,14 @@ def main() -> None:
     linked_summary, owners_universe = prepare_linked_summary(linked)
 
     canon = pd.read_csv(in_canonical).fillna("")
-    candidates = build_candidates(canon=canon, linked_summary=linked_summary, expansion=expansion)
+    manual_title_overrides_path = MANUAL_DIR / "manual_title_overrides.csv"
+    title_overrides = load_manual_title_overrides(manual_title_overrides_path)
+    candidates = build_candidates(
+        canon=canon,
+        linked_summary=linked_summary,
+        expansion=expansion,
+        title_overrides=title_overrides,
+    )
 
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
@@ -666,7 +1063,11 @@ def main() -> None:
         "card_id",
         "expansion_code",
         "canonical_id",
+        "title_original",
         "title_display",
+        "artists_all",
+        "artists_count",
+        "artists_ids",
         "artists_display",
         "year_int",
         "year",
@@ -701,6 +1102,7 @@ def main() -> None:
     out_json.write_text(json.dumps(deck_out.to_dict(orient="records"), ensure_ascii=False, indent=2), encoding="utf-8")
 
     write_deck_reports(valid_pool=valid_pool, deck_out=deck_out, reports_prefix=reports_prefix)
+    title_sample_path = write_title_normalization_sample(candidates=candidates, expansion=expansion)
 
     album_cap_violations = 0
     if not deck_out.empty and int(args.max_per_album) > 0:
@@ -757,6 +1159,7 @@ def main() -> None:
 
     print(f"OK manual queue -> {manual_queue_path}")
     print(f"OK collapse report -> {REPORTS_DIR / f'collapse_{expansion}.csv'}")
+    print(f"OK title normalization sample -> {title_sample_path}")
     print(f"OK deck -> {out_csv}")
     print(f"OK deck json -> {out_json}")
     print(f"OK qc -> {qc_path}")

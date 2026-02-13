@@ -19,6 +19,7 @@ SCRIPT_PATHS: Dict[str, Path] = {
     "export": ROOT / "pipeline" / "spotify" / "export" / "parse_yourlibrary_export.py",
     "instances": ROOT / "pipeline" / "spotify" / "export" / "build_instances.py",
     "canonicalize": ROOT / "pipeline" / "canonicalize" / "canonicalize_and_registry.py",
+    "spotify_tracks": ROOT / "pipeline" / "enrich" / "enrich_spotify_tracks.py",
     "years": ROOT / "pipeline" / "enrich" / "enrich_years.py",
     "deck": ROOT / "pipeline" / "deck" / "build_deck.py",
     "cards_preview": ROOT / "pipeline" / "cards" / "render_card_preview.py",
@@ -29,13 +30,14 @@ PIPELINE_ALL_CORE: List[str] = [
     "export",
     "instances",
     "canonicalize",
+    "spotify_tracks",
     "years",
     "deck",
 ]
 
 # cards_preview se mantiene como subcomando explícito, pero no se ejecuta por defecto en all --with-cards.
 CARDS_STAGES: List[str] = ["cards_sheets"]
-EXPANSION_AWARE = {"instances", "canonicalize", "years", "deck"}
+EXPANSION_AWARE = {"instances", "canonicalize", "spotify_tracks", "years", "deck"}
 
 
 def split_passthrough(argv: Sequence[str]) -> Tuple[List[str], List[str]]:
@@ -401,6 +403,7 @@ def build_parser() -> argparse.ArgumentParser:
         "export": "Run Spotify export parser.",
         "instances": "Build instances CSVs.",
         "canonicalize": "Build linked instances and canonical registry.",
+        "spotify_tracks": "Enrich canonical songs with Spotify tracks data.",
         "years": "Enrich canonical songs with year metadata.",
         "deck": "Build deck CSV/JSON.",
         "cards_preview": "Render one card preview PDF.",
