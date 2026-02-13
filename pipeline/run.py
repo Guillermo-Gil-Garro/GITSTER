@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -157,7 +158,9 @@ def run_stage(command: str, expansion: str, cfg: Dict[str, Any], passthrough: Se
     if dry_run:
         return 0
 
-    completed = subprocess.run(cmd, cwd=str(ROOT))
+    child_env = dict(os.environ)
+    child_env.setdefault("PYTHONIOENCODING", "utf-8")
+    completed = subprocess.run(cmd, cwd=str(ROOT), env=child_env)
     return int(completed.returncode)
 
 
