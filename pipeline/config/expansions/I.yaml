@@ -4,4 +4,7 @@ seed: 666
 deck:
   limit: 300
   max_per_album: 3
-  manual_alpha: 0.67
+  year_confidence_min: 0.80
+  manual_year_alpha: 0.67
+  manual_year_rounding: round
+  manual_year_min_k: 2

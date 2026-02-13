@@ -22,18 +22,16 @@ SCRIPT_PATHS: Dict[str, Path] = {
     "cards_sheets": ROOT / "pipeline" / "cards" / "render_print_sheets.py",
 }
 
-PIPELINE_ALL_ORDER: List[str] = [
+PIPELINE_ALL_CORE: List[str] = [
     "export",
     "instances",
     "canonicalize",
     "years",
     "deck",
-    "cards_preview",
-    "cards_sheets",
 ]
 
+CARDS_STAGES: List[str] = ["cards_preview", "cards_sheets"]
 EXPANSION_AWARE = {"instances", "canonicalize", "years", "deck"}
-CARDS_COMMANDS = {"cards_preview", "cards_sheets"}
 
 
 def split_passthrough(argv: Sequence[str]) -> Tuple[List[str], List[str]]:
@@ -78,7 +76,7 @@ def resolve_runtime_config(expansion_arg: str | None, config_arg: str | None) ->
     if config_arg:
         config_path = Path(config_arg)
         cfg = load_yaml_config(config_path)
-        expansion = (expansion_arg or str(cfg.get("expansion", "")).strip() or config_path.stem or "I")
+        expansion = expansion_arg or str(cfg.get("expansion", "")).strip() or config_path.stem or "I"
         return expansion, config_path, cfg
 
     if expansion_arg:
@@ -99,21 +97,41 @@ def resolve_runtime_config(expansion_arg: str | None, config_arg: str | None) ->
     return expansion, config_path, {}
 
 
+def deck_flags_from_config(cfg: Dict[str, Any], passthrough: Sequence[str]) -> List[str]:
+    extra: List[str] = []
+    deck_cfg = cfg.get("deck")
+    if not isinstance(deck_cfg, dict):
+        return extra
+
+    mappings = [
+        ("limit", "--limit"),
+        ("max_per_album", "--max-per-album"),
+        ("year_confidence_min", "--year-confidence-min"),
+        ("manual_year_alpha", "--manual-year-alpha"),
+        ("manual_year_rounding", "--manual-year-rounding"),
+        ("manual_year_min_k", "--manual-year-min-k"),
+    ]
+    for key, flag in mappings:
+        if key in deck_cfg and not has_flag(passthrough, flag):
+            extra.extend([flag, str(deck_cfg[key])])
+
+    return extra
+
+
 def extra_args_for_stage(command: str, expansion: str, cfg: Dict[str, Any], passthrough: Sequence[str]) -> List[str]:
     extra: List[str] = []
 
     if command in EXPANSION_AWARE and not has_flag(passthrough, "--expansion"):
         extra.extend(["--expansion", expansion])
 
-    if command == "deck":
-        deck_cfg = cfg.get("deck")
-        if isinstance(deck_cfg, dict):
-            if not has_flag(passthrough, "--limit") and "limit" in deck_cfg:
-                extra.extend(["--limit", str(deck_cfg["limit"])])
-            if not has_flag(passthrough, "--max-per-album") and "max_per_album" in deck_cfg:
-                extra.extend(["--max-per-album", str(deck_cfg["max_per_album"])])
+    if command in {"export", "instances"}:
+        if not has_flag(passthrough, "--all") and not has_flag(passthrough, "--owner"):
+            extra.append("--all")
 
-    if command in CARDS_COMMANDS and not has_flag(passthrough, "--deck"):
+    if command == "deck":
+        extra.extend(deck_flags_from_config(cfg, passthrough))
+
+    if command in CARDS_STAGES and not has_flag(passthrough, "--deck"):
         extra.extend(["--deck", f"pipeline/data/processed/deck_{expansion}.csv"])
 
     return extra
@@ -128,6 +146,11 @@ def build_command(command: str, expansion: str, cfg: Dict[str, Any], passthrough
 
 
 def run_stage(command: str, expansion: str, cfg: Dict[str, Any], passthrough: Sequence[str], dry_run: bool) -> int:
+    script = SCRIPT_PATHS[command]
+    if not script.exists():
+        print(f"[run.py] warning: missing stage script, skipping: {script}")
+        return 0
+
     cmd = build_command(command, expansion, cfg, passthrough)
     print(subprocess.list2cmdline(cmd))
 
@@ -156,9 +179,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Print exact command(s) without executing them.",
     )
 
-    parser = argparse.ArgumentParser(
-        description="Stable wrapper for pipeline stage scripts.",
-    )
+    parser = argparse.ArgumentParser(description="Stable wrapper for pipeline stage scripts.")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     sub_help = {
@@ -169,13 +190,31 @@ def build_parser() -> argparse.ArgumentParser:
         "deck": "Build deck CSV/JSON.",
         "cards_preview": "Render one card preview PDF.",
         "cards_sheets": "Render print sheets PDFs.",
-        "all": "Run all stages in order.",
     }
 
-    for name in list(SCRIPT_PATHS.keys()) + ["all"]:
+    for name in SCRIPT_PATHS:
         subparsers.add_parser(name, parents=[common], help=sub_help[name])
 
+    all_parser = subparsers.add_parser("all", parents=[common], help="Run core stages in order.")
+    all_parser.add_argument(
+        "--with-cards",
+        action="store_true",
+        help="Also run cards_preview and cards_sheets if scripts exist.",
+    )
+
     return parser
+
+
+def stages_for_command(args: argparse.Namespace) -> List[str]:
+    if args.command != "all":
+        return [args.command]
+
+    stages = list(PIPELINE_ALL_CORE)
+    if bool(getattr(args, "with_cards", False)):
+        for stage in CARDS_STAGES:
+            if SCRIPT_PATHS[stage].exists():
+                stages.append(stage)
+    return stages
 
 
 def main() -> int:
@@ -191,7 +230,7 @@ def main() -> int:
     if args.command == "all" and passthrough:
         parser.error("Passthrough with 'all' is not supported. Run stages individually to pass extra args.")
 
-    stages = PIPELINE_ALL_ORDER if args.command == "all" else [args.command]
+    stages = stages_for_command(args)
 
     for stage in stages:
         stage_passthrough: Sequence[str] = passthrough if stage == args.command else []
