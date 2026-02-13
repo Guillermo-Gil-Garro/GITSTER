@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import os
 import subprocess
 import sys
+from collections import Counter
 from pathlib import Path
 from typing import Any, Dict, List, Sequence, Tuple
 
@@ -119,14 +121,27 @@ def deck_flags_from_config(cfg: Dict[str, Any], passthrough: Sequence[str]) -> L
     return extra
 
 
-def extra_args_for_stage(command: str, expansion: str, cfg: Dict[str, Any], passthrough: Sequence[str]) -> List[str]:
+def extra_args_for_stage(
+    command: str,
+    expansion: str,
+    cfg: Dict[str, Any],
+    passthrough: Sequence[str],
+    stage_args: Sequence[str] | None = None,
+) -> List[str]:
     extra: List[str] = []
+    if stage_args:
+        extra.extend(list(stage_args))
 
     if command in EXPANSION_AWARE and not has_flag(passthrough, "--expansion"):
         extra.extend(["--expansion", expansion])
 
     if command in {"export", "instances"}:
-        if not has_flag(passthrough, "--all") and not has_flag(passthrough, "--owner"):
+        if (
+            not has_flag(extra, "--all")
+            and not has_flag(extra, "--owner")
+            and not has_flag(passthrough, "--all")
+            and not has_flag(passthrough, "--owner")
+        ):
             extra.append("--all")
 
     if command == "deck":
@@ -138,21 +153,34 @@ def extra_args_for_stage(command: str, expansion: str, cfg: Dict[str, Any], pass
     return extra
 
 
-def build_command(command: str, expansion: str, cfg: Dict[str, Any], passthrough: Sequence[str]) -> List[str]:
+def build_command(
+    command: str,
+    expansion: str,
+    cfg: Dict[str, Any],
+    passthrough: Sequence[str],
+    stage_args: Sequence[str] | None = None,
+) -> List[str]:
     script = SCRIPT_PATHS[command]
     cmd = [sys.executable, str(script)]
-    cmd.extend(extra_args_for_stage(command, expansion, cfg, passthrough))
+    cmd.extend(extra_args_for_stage(command, expansion, cfg, passthrough, stage_args=stage_args))
     cmd.extend(list(passthrough))
     return cmd
 
 
-def run_stage(command: str, expansion: str, cfg: Dict[str, Any], passthrough: Sequence[str], dry_run: bool) -> int:
+def run_stage(
+    command: str,
+    expansion: str,
+    cfg: Dict[str, Any],
+    passthrough: Sequence[str],
+    dry_run: bool,
+    stage_args: Sequence[str] | None = None,
+) -> int:
     script = SCRIPT_PATHS[command]
     if not script.exists():
         print(f"[run.py] warning: missing stage script, skipping: {script}")
         return 0
 
-    cmd = build_command(command, expansion, cfg, passthrough)
+    cmd = build_command(command, expansion, cfg, passthrough, stage_args=stage_args)
     print(subprocess.list2cmdline(cmd))
 
     if dry_run:
@@ -162,6 +190,170 @@ def run_stage(command: str, expansion: str, cfg: Dict[str, Any], passthrough: Se
     child_env.setdefault("PYTHONIOENCODING", "utf-8")
     completed = subprocess.run(cmd, cwd=str(ROOT), env=child_env)
     return int(completed.returncode)
+
+
+def manual_queue_path(expansion: str) -> Path:
+    return ROOT / "pipeline" / "manual" / f"manual_year_queue_{expansion}.csv"
+
+
+def summarize_manual_queue(expansion: str) -> Tuple[bool, Dict[str, Any]]:
+    queue_path = manual_queue_path(expansion)
+    stats: Dict[str, Any] = {
+        "queue_rows": 0,
+        "owners_summary": "",
+    }
+
+    if not queue_path.exists():
+        return False, stats
+
+    owners_counter: Counter[int] = Counter()
+    has_owners_count_col = False
+
+    try:
+        with queue_path.open("r", encoding="utf-8", newline="") as handle:
+            reader = csv.DictReader(handle)
+            has_owners_count_col = bool(reader.fieldnames and "owners_count" in reader.fieldnames)
+            for row in reader:
+                stats["queue_rows"] += 1
+                if has_owners_count_col:
+                    raw_val = str(row.get("owners_count", "")).strip()
+                    try:
+                        owners_counter[int(float(raw_val))] += 1
+                    except Exception:
+                        continue
+    except Exception as exc:
+        print(f"[run.py] warning: cannot read queue file {queue_path}: {exc}", file=sys.stderr)
+        return False, stats
+
+    if has_owners_count_col and owners_counter:
+        bits = [f"{owner_count}:{owners_counter[owner_count]}" for owner_count in sorted(owners_counter.keys())]
+        stats["owners_summary"] = ", ".join(bits)
+
+    return int(stats["queue_rows"]) > 0, stats
+
+
+def build_manual_paths(expansion: str) -> Dict[str, str]:
+    return {
+        "queue": f"pipeline/manual/manual_year_queue_{expansion}.csv",
+        "overrides": "pipeline/manual/manual_year_overrides.csv",
+        "merges": "pipeline/manual/manual_merges.csv",
+        "collapse": f"pipeline/reports/collapse_{expansion}.csv",
+        "deck_qc": f"pipeline/reports/deck_qc_{expansion}.csv",
+        "deck_build": f"pipeline/reports/deck_build_{expansion}/",
+    }
+
+
+def print_manual_action_banner(expansion: str, paths: Dict[str, str], stats: Dict[str, Any]) -> None:
+    use_color = False
+    if sys.stdout.isatty():
+        try:
+            import colorama  # type: ignore
+
+            colorama.just_fix_windows_console()
+            use_color = True
+        except Exception:
+            use_color = bool(os.environ.get("TERM"))
+
+    c_title = "\033[1;97;41m" if use_color else ""
+    c_warn = "\033[1;33m" if use_color else ""
+    c_reset = "\033[0m" if use_color else ""
+
+    sep = "=" * 92
+    rows = int(stats.get("queue_rows", 0))
+    owners_summary = str(stats.get("owners_summary", "")).strip()
+
+    print()
+    print(sep)
+    print(f"{c_title} ACCION MANUAL REQUERIDA (AÑOS) {c_reset}")
+    print(sep)
+    print(f"{c_warn}Filas pendientes en cola manual:{c_reset} {rows}")
+    if owners_summary:
+        print(f"{c_warn}Resumen owners_count (owners_count:filas):{c_reset} {owners_summary}")
+    print("-" * 92)
+    print("A) " + paths["queue"])
+    print("   NO editar a mano; es la cola/todo de pendientes. Úsala para identificar canonical_id a corregir.")
+    print("B) " + paths["overrides"])
+    print(
+        "   SI editar: añade/edita filas para fijar el año de una canción. "
+        "Toca SOLO canonical_id y campos year del header existente. "
+        "NO cambies nombres/orden de headers."
+    )
+    print("C) " + paths["merges"])
+    print(
+        "   SI editar SOLO si el colapso ha elegido mal: define merges/keep-drop según el header "
+        "del CSV; después hay que rerun desde deck o canonicalize según proceda."
+    )
+    print("D) " + paths["collapse"])
+    print("   NO editar; es diagnóstico para ver qué se colapsó y por qué.")
+    print("E) " + paths["deck_qc"] + "  y  " + paths["deck_build"])
+    print("   NO editar; QC para validar el mazo.")
+    print("-" * 92)
+    print("Siguientes comandos:")
+    print(f"1) Tras editar overrides: python pipeline/run.py years --expansion {expansion}")
+    print(f"2) Después: python pipeline/run.py deck --expansion {expansion}")
+    print(
+        "3) Luego PDFs: "
+        f"python pipeline/run.py all --expansion {expansion} --with-cards "
+        f"(o python pipeline/run.py cards_sheets --expansion {expansion}; opcional cards_preview)"
+    )
+    print(sep)
+    print()
+
+
+def run_stages(
+    stages: Sequence[str],
+    expansion: str,
+    cfg: Dict[str, Any],
+    dry_run: bool,
+    stage_passthrough: Dict[str, Sequence[str]] | None = None,
+    stage_args: Dict[str, Sequence[str]] | None = None,
+) -> int:
+    for stage in stages:
+        passthrough_for_stage: Sequence[str] = []
+        if stage_passthrough and stage in stage_passthrough:
+            passthrough_for_stage = stage_passthrough[stage]
+
+        args_for_stage: Sequence[str] = []
+        if stage_args and stage in stage_args:
+            args_for_stage = stage_args[stage]
+
+        rc = run_stage(
+            command=stage,
+            expansion=expansion,
+            cfg=cfg,
+            passthrough=passthrough_for_stage,
+            dry_run=dry_run,
+            stage_args=args_for_stage,
+        )
+        if rc != 0:
+            return rc
+    return 0
+
+
+def stage_args_for_single_command(args: argparse.Namespace) -> Dict[str, Sequence[str]]:
+    out: Dict[str, Sequence[str]] = {}
+    if args.command not in {"export", "instances"}:
+        return out
+
+    stage = args.command
+    owner = getattr(args, "owner", None)
+    all_owners = bool(getattr(args, "all_owners", False))
+    if owner:
+        out[stage] = ["--owner", str(owner)]
+    elif all_owners:
+        out[stage] = ["--all"]
+    return out
+
+
+def stage_args_for_all_command(args: argparse.Namespace) -> Dict[str, Sequence[str]]:
+    out: Dict[str, Sequence[str]] = {}
+    owner = getattr(args, "owner", None)
+    for stage in ("export", "instances"):
+        if owner:
+            out[stage] = ["--owner", str(owner)]
+        else:
+            out[stage] = ["--all"]
+    return out
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -196,9 +388,27 @@ def build_parser() -> argparse.ArgumentParser:
     }
 
     for name in SCRIPT_PATHS:
-        subparsers.add_parser(name, parents=[common], help=sub_help[name])
+        stage_parser = subparsers.add_parser(name, parents=[common], help=sub_help[name])
+        if name in {"export", "instances"}:
+            owner_group = stage_parser.add_mutually_exclusive_group()
+            owner_group.add_argument(
+                "--owner",
+                default=None,
+                help="Owner override (solo para esta etapa).",
+            )
+            owner_group.add_argument(
+                "--all",
+                dest="all_owners",
+                action="store_true",
+                help="Procesa todos los owners en esta etapa.",
+            )
 
     all_parser = subparsers.add_parser("all", parents=[common], help="Run core stages in order.")
+    all_parser.add_argument(
+        "--owner",
+        default=None,
+        help="Owner override SOLO para export e instances dentro de all.",
+    )
     all_parser.add_argument(
         "--with-cards",
         action="store_true",
@@ -209,15 +419,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def stages_for_command(args: argparse.Namespace) -> List[str]:
-    if args.command != "all":
-        return [args.command]
-
-    stages = list(PIPELINE_ALL_CORE)
-    if bool(getattr(args, "with_cards", False)):
-        for stage in CARDS_STAGES:
-            if SCRIPT_PATHS[stage].exists():
-                stages.append(stage)
-    return stages
+    return [args.command]
 
 
 def main() -> int:
@@ -233,15 +435,47 @@ def main() -> int:
     if args.command == "all" and passthrough:
         parser.error("Passthrough with 'all' is not supported. Run stages individually to pass extra args.")
 
-    stages = stages_for_command(args)
-
-    for stage in stages:
-        stage_passthrough: Sequence[str] = passthrough if stage == args.command else []
-        rc = run_stage(
-            command=stage,
+    if args.command != "all":
+        stages = stages_for_command(args)
+        rc = run_stages(
+            stages=stages,
             expansion=expansion,
             cfg=cfg,
-            passthrough=stage_passthrough,
+            dry_run=bool(args.dry_run),
+            stage_passthrough={args.command: passthrough},
+            stage_args=stage_args_for_single_command(args),
+        )
+        if rc != 0:
+            return rc
+        return 0
+
+    rc = run_stages(
+        stages=PIPELINE_ALL_CORE,
+        expansion=expansion,
+        cfg=cfg,
+        dry_run=bool(args.dry_run),
+        stage_args=stage_args_for_all_command(args),
+    )
+    if rc != 0:
+        return rc
+
+    has_pending_manual, queue_stats = summarize_manual_queue(expansion)
+    if has_pending_manual:
+        print_manual_action_banner(
+            expansion=expansion,
+            paths=build_manual_paths(expansion),
+            stats=queue_stats,
+        )
+        if bool(getattr(args, "with_cards", False)):
+            print("[run.py] cards generation blocked: manual year queue still has pending rows.", file=sys.stderr)
+            return 2
+
+    if bool(getattr(args, "with_cards", False)):
+        card_stages = [stage for stage in CARDS_STAGES if SCRIPT_PATHS[stage].exists()]
+        rc = run_stages(
+            stages=card_stages,
+            expansion=expansion,
+            cfg=cfg,
             dry_run=bool(args.dry_run),
         )
         if rc != 0:
