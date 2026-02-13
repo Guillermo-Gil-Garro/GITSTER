@@ -2,760 +2,765 @@ import argparse
 import json
 import math
 import re
-from collections import Counter, defaultdict
+from collections import defaultdict
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 import pandas as pd
 
 PROCESSED_DIR = Path("pipeline/data/processed")
 REPORTS_DIR = Path("pipeline/reports")
+MANUAL_DIR = Path("pipeline/manual")
 
-# Quita solo “feat/ft/featuring” en paréntesis o corchetes.
-# Mantiene otros paréntesis (ej. (Call Me By Your Name), (Da Ba Dee)).
-FEAT_PAREN_RE = re.compile(
-    r"[\(\[]\s*(feat\.?|ft\.?|featuring)\b.*?[\)\]]", flags=re.IGNORECASE
-)
+FEAT_BRACKET_RE = re.compile(r"[\(\[]\s*(feat\.?|ft\.?|featuring)\b.*?[\)\]]", flags=re.IGNORECASE)
+FEAT_INLINE_RE = re.compile(r"\b(feat\.?|ft\.?|featuring)\b.*$", flags=re.IGNORECASE)
+PUNCT_RE = re.compile(r"[^a-z0-9\s]")
+SPACE_RE = re.compile(r"\s+")
 
-# Keywords típicos de “versiones” que NO quieres en la carta
-VERSION_KEYWORDS = [
-    "remaster",
-    "radio edit",
-    "edit",
-    "re-edit",
-    "mix",
-    "remix",
-    "version",
-    "live",
-    "acoustic",
-    "demo",
-    "karaoke",
-    "instrumental",
-    "sped up",
-    "slowed",
-    "extended",
-    "club",
-    "mono",
-    "stereo",
+VERSION_TAG_PATTERNS = [
+    r"\bremaster(ed)?\b",
+    r"\bradio\s+edit\b",
+    r"\bedit\b",
+    r"\blive\b",
+    r"\bacoustic\b",
+    r"\bdemo\b",
+    r"\binstrumental\b",
+    r"\bextended\b",
+    r"\bversion\b",
+    r"\bmono\b",
+    r"\bstereo\b",
+    r"\bclean\b",
+    r"\bexplicit\b",
+    r"\breissue\b",
+]
+
+KEEP_DISTINCT_PATTERNS = [
+    r"\bremix\b",
+    r"\bsped\s+up\b",
+    r"\bspeed\s+up\b",
+    r"\bslowed\b",
+    r"\bnightcore\b",
 ]
 
 
-def clean_title_display(title: str) -> str:
-    s = str(title or "").strip()
-
-    # 1) quitar (feat. X) / [feat. X]
-    s = FEAT_PAREN_RE.sub("", s).strip()
-
-    # 2) manejar sufijos tipo " - 2011 Remastered" / " - Radio Edit"
-    parts = [p.strip() for p in s.split(" - ")]
-    if len(parts) >= 2:
-        suffix = " ".join(parts[1:]).lower()
-        if any(k in suffix for k in VERSION_KEYWORDS):
-            s = parts[0].strip()
-
-    # 3) quitar paréntesis de “remaster” si vinieran como "(2011 Remastered)"
-    s = re.sub(r"\(([^)]*remaster[^)]*)\)", "", s, flags=re.IGNORECASE).strip()
-    s = re.sub(r"\[([^\]]*remaster[^\]]*)\]", "", s, flags=re.IGNORECASE).strip()
-
-    # 4) limpiar dobles espacios
-    s = re.sub(r"\s{2,}", " ", s).strip()
-    return s
-
-
 def pick_first_nonempty(series: pd.Series) -> str:
-    for v in series.fillna("").astype(str).tolist():
-        v = v.strip()
-        if v:
-            return v
+    for value in series.fillna("").astype(str).tolist():
+        value = value.strip()
+        if value:
+            return value
     return ""
 
 
-def fmt_year_int(val) -> str:
-    """Convierte 1978.0 / '1978.0' / NaN / '' a '1978' o ''."""
-    if val is None:
-        return ""
+def parse_year_int(value: object) -> Optional[int]:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text or text.lower() == "nan":
+        return None
     try:
-        f = float(val)
-        if f != f:  # NaN
-            return ""
-        return str(int(f))
+        as_float = float(text)
     except Exception:
-        s = str(val).strip()
-        if not s or s.lower() == "nan":
-            return ""
-        return s.split(".")[0]
+        return None
+    if math.isnan(as_float):
+        return None
+    return int(as_float)
 
 
-def parse_owners_field(v) -> List[str]:
-    """
-    Acepta owners como:
-    - 'Guille'
-    - 'Guille|Luks'
-    - 'Guille, Luks'
-    - '["Guille","Luks"]'
-    """
-    s = str(v or "").strip()
-    if not s or s.lower() == "nan":
+def parse_float(value: object, default: float = 0.0) -> float:
+    try:
+        out = float(value)
+    except Exception:
+        return default
+    if math.isnan(out):
+        return default
+    return out
+
+
+def parse_owners_field(value: object) -> List[str]:
+    text = str(value or "").strip()
+    if not text or text.lower() == "nan":
         return []
 
-    if s.startswith("[") and s.endswith("]"):
+    if text.startswith("[") and text.endswith("]"):
         try:
-            arr = json.loads(s)
+            arr = json.loads(text)
             if isinstance(arr, list):
-                out = [str(x).strip() for x in arr if str(x).strip()]
-                return out
+                vals = [str(v).strip() for v in arr if str(v).strip()]
+                return sorted(set(vals), key=lambda s: s.lower())
         except Exception:
             pass
 
-    if "|" in s:
-        return [p.strip() for p in s.split("|") if p.strip()]
-    if "," in s:
-        return [p.strip() for p in s.split(",") if p.strip()]
-    return [s]
+    for sep in ["|", ";", "/", "\\"]:
+        text = text.replace(sep, ",")
+    vals = [v.strip() for v in text.split(",") if v.strip()]
+    return sorted(set(vals), key=lambda s: s.lower())
 
 
 def owners_to_display(owners: Iterable[str]) -> str:
-    arr = [str(x).strip() for x in owners if str(x).strip()]
-    arr = sorted(set(arr), key=lambda x: x.lower())
-    return ", ".join(arr)
+    vals = sorted({str(o).strip() for o in owners if str(o).strip()}, key=lambda s: s.lower())
+    return ", ".join(vals)
 
 
-def load_linked_instances(
-    expansion: str,
-    owner_legacy: str,
-    input_linked: Optional[str],
-) -> pd.DataFrame:
-    """
-    Carga instancias 'linked' (instances_linked_<EXP>_<OWNER>.csv).
-    - Si --input-linked apunta a fichero: usa ese.
-    - Si --input-linked apunta a directorio: carga todos los CSV dentro.
-    - Si --input-linked contiene wildcard (* o ?): glob.
-    - Si no se pasa --input-linked: autodetecta todos los instances_linked_<EXP>_*.csv;
-      si no encuentra, cae a la ruta legacy instances_linked_<EXP>_<owner>.csv.
-    """
-    def read_one(p: Path) -> pd.DataFrame:
-        d = pd.read_csv(p).fillna("")
-        d["_source_file"] = p.name
-        return d
+def clean_title_display(title: str) -> str:
+    text = str(title or "").strip()
+    text = FEAT_BRACKET_RE.sub("", text)
+    text = SPACE_RE.sub(" ", text).strip()
+    return text
+
+
+def normalize_basic(text: str) -> str:
+    out = str(text or "").lower().strip()
+    out = FEAT_BRACKET_RE.sub(" ", out)
+    out = FEAT_INLINE_RE.sub(" ", out)
+    out = PUNCT_RE.sub(" ", out)
+    out = SPACE_RE.sub(" ", out).strip()
+    return out
+
+
+def contains_any_pattern(text: str, patterns: Sequence[str]) -> bool:
+    for pattern in patterns:
+        if re.search(pattern, text, flags=re.IGNORECASE):
+            return True
+    return False
+
+
+def remove_version_tags_from_title(text: str) -> str:
+    out = str(text or "")
+    parts = [p.strip() for p in out.split(" - ")]
+    if len(parts) > 1:
+        suffix = " ".join(parts[1:])
+        if contains_any_pattern(suffix, VERSION_TAG_PATTERNS):
+            out = parts[0].strip()
+
+    out = FEAT_BRACKET_RE.sub(" ", out)
+
+    cleaned = out
+    for pattern in VERSION_TAG_PATTERNS:
+        cleaned = re.sub(r"[\(\[][^\)\]]*" + pattern + r"[^\)\]]*[\)\]]", " ", cleaned, flags=re.IGNORECASE)
+
+    cleaned = FEAT_INLINE_RE.sub(" ", cleaned)
+    cleaned = PUNCT_RE.sub(" ", cleaned.lower())
+    cleaned = SPACE_RE.sub(" ", cleaned).strip()
+    return cleaned
+
+
+def build_collapse_key(title: str, artists: str) -> str:
+    title_raw = str(title or "")
+    artists_norm = normalize_basic(artists)
+    if contains_any_pattern(title_raw, KEEP_DISTINCT_PATTERNS):
+        title_norm = normalize_basic(title_raw)
+        variant_prefix = "variant"
+    else:
+        title_norm = remove_version_tags_from_title(title_raw)
+        variant_prefix = "base"
+
+    if not title_norm:
+        title_norm = "unknown_title"
+    if not artists_norm:
+        artists_norm = "unknown_artist"
+
+    return f"{artists_norm}||{variant_prefix}||{title_norm}"
+
+
+def normalize_album_name(name: str) -> str:
+    out = str(name or "").strip().lower()
+    out = PUNCT_RE.sub(" ", out)
+    out = SPACE_RE.sub(" ", out).strip()
+    return out
+
+
+def build_album_key(album_id: str, album_name: str, canonical_id: str) -> str:
+    aid = str(album_id or "").strip()
+    if aid:
+        return aid
+
+    aname = normalize_album_name(album_name)
+    if aname:
+        return f"name::{aname}"
+
+    return f"cid::{str(canonical_id or '').strip()}"
+
+
+def load_linked_instances(expansion: str, owner_legacy: str, input_linked: Optional[str]) -> pd.DataFrame:
+    def read_one(path: Path) -> pd.DataFrame:
+        frame = pd.read_csv(path).fillna("")
+        frame["_source_file"] = path.name
+        return frame
 
     if input_linked:
-        p = Path(input_linked)
-        if any(ch in str(input_linked) for ch in ["*", "?"]):
-            files = sorted(Path().glob(str(input_linked)))
+        path = Path(input_linked)
+        if any(ch in input_linked for ch in ["*", "?"]):
+            files = sorted(Path().glob(input_linked))
             if not files:
-                raise FileNotFoundError(f"No hay coincidencias para glob: {input_linked}")
+                raise FileNotFoundError(f"No matches for --input-linked glob: {input_linked}")
             return pd.concat([read_one(f) for f in files], ignore_index=True)
 
-        if p.is_dir():
-            files = sorted(p.glob("*.csv"))
+        if path.is_dir():
+            files = sorted(path.glob("*.csv"))
             if not files:
-                raise FileNotFoundError(f"No hay CSV en directorio: {p}")
+                raise FileNotFoundError(f"No CSV files found in --input-linked directory: {path}")
             return pd.concat([read_one(f) for f in files], ignore_index=True)
 
-        if p.is_file():
-            return read_one(p)
+        if path.is_file():
+            return read_one(path)
 
-        raise FileNotFoundError(f"No existe --input-linked: {p}")
+        raise FileNotFoundError(f"--input-linked not found: {path}")
 
-    # autodetect
     pattern = PROCESSED_DIR / f"instances_linked_{expansion}_*.csv"
     files = sorted(pattern.parent.glob(pattern.name))
     if files:
         return pd.concat([read_one(f) for f in files], ignore_index=True)
 
-    # legacy
     legacy = PROCESSED_DIR / f"instances_linked_{expansion}_{owner_legacy}.csv"
     if legacy.exists():
         return read_one(legacy)
 
     raise FileNotFoundError(
-        f"No se encontraron linked instances. Probé:\n"
-        f"- {pattern}\n- {legacy}\n"
-        f"Usa --input-linked para apuntar a un CSV/directorio/glob."
+        "No linked instances found. Expected files like "
+        f"{pattern} or legacy {legacy}"
     )
 
 
-def compute_owner_cap_cards(
-    limit: int,
-    owners: List[str],
-    owner_cap_percent: float,
-    owner_cap_cards: int,
-    owner_cap_slack: float,
-) -> int:
-    if owner_cap_cards and owner_cap_cards > 0:
-        return int(owner_cap_cards)
+def prepare_linked_summary(linked: pd.DataFrame) -> Tuple[pd.DataFrame, List[str]]:
+    linked = linked.copy().fillna("")
 
-    if owner_cap_percent and owner_cap_percent > 0:
-        return int(math.ceil(limit * float(owner_cap_percent)))
+    for col in ["canonical_id", "owner_label", "spotify_url", "spotify_uri", "track_id", "album_id"]:
+        if col not in linked.columns:
+            linked[col] = ""
 
-    n = max(1, len(owners))
-    # Por defecto: 1/N + slack (clamp para que no sea ridículo con N grande)
-    pct = (1.0 / n) + float(owner_cap_slack)
-    pct = max(pct, 0.12)  # mínimo 12%
-    pct = min(pct, 0.85)  # máximo 85%
-    return int(math.ceil(limit * pct))
+    linked["canonical_id"] = linked["canonical_id"].astype(str).str.strip()
+    linked = linked[linked["canonical_id"] != ""].copy()
 
+    linked["owner_label"] = linked["owner_label"].astype(str).str.strip()
 
-def choose_primary_owner(owners_sorted: List[str], owner_counts: Dict[str, int]) -> str:
-    if not owners_sorted:
-        return ""
-    # El menos representado; desempate alfabético
-    return sorted(owners_sorted, key=lambda o: (owner_counts.get(o, 0), o.lower()))[0]
+    linked["album_name_any"] = ""
+    for col in ["album_name", "album_name_trim", "album_name_raw"]:
+        if col in linked.columns:
+            vals = linked[col].astype(str).str.strip()
+            linked.loc[linked["album_name_any"].eq("") & vals.ne(""), "album_name_any"] = vals
 
+    agg_map = {
+        "spotify_url": ("spotify_url", pick_first_nonempty),
+        "spotify_uri": ("spotify_uri", pick_first_nonempty),
+        "track_id": ("track_id", pick_first_nonempty),
+        "album_id": ("album_id", pick_first_nonempty),
+        "album_name_any": ("album_name_any", pick_first_nonempty),
+    }
+    rep = linked.groupby("canonical_id", as_index=False).agg(**agg_map)
+    rep = rep.rename(columns={"album_name_any": "album_name"})
 
-def select_deck_300(
-    df: pd.DataFrame,
-    limit: int,
-    max_per_album: int,
-    owner_cap_cards: int,
-    relax_owner_cap_if_needed: bool,
-    prefer_have_spotify_url: bool,
-    reports_prefix: Path,
-    canonical_df: Optional[pd.DataFrame] = None,
-    verbose: bool = False,
-) -> pd.DataFrame:
-    """
-    Selección con:
-    - Cobertura: 1 por año (siempre que year != NaN)
-    - Prioridad: owners_count desc
-    - Equidad: soft cap por owner (primary_owner)
-    - Cap álbum: max_per_album por album_id
-    """
-    if limit <= 0:
-        return df.copy()
-
-    # Validaciones mínimas
-    if "year" not in df.columns:
-        raise ValueError("El DF de entrada no tiene columna 'year'.")
-
-    # Año int (hard)
-    year_int = pd.to_numeric(df["year"], errors="coerce")
-    missing_year = year_int.isna()
-    if missing_year.any():
-        miss = df.loc[missing_year, ["canonical_id", "title_display", "artists_display"]].copy()
-        miss_path = reports_prefix / "deck_year_missing.csv"
-        miss.to_csv(miss_path, index=False, encoding="utf-8")
-        raise ValueError(
-            f"Hay {int(missing_year.sum())} canciones sin year resuelto. "
-            f"Resuelve años antes de montar deck. Ver: {miss_path}"
+    owners_df = linked.groupby("canonical_id", as_index=False).agg(
+        owners_list=(
+            "owner_label",
+            lambda s: sorted({str(v).strip() for v in s.tolist() if str(v).strip()}, key=lambda x: x.lower()),
         )
-    df = df.copy()
-    df["year"] = year_int.astype(int)
-
-
-    # Album cap (si aplica): preferimos album_id; fallback a album_name + year si no existe.
-    if max_per_album > 0:
-        df = df.copy()
-
-        # Backfill album fields desde canonical si faltan en el pool/candidates.
-        if canonical_df is not None and "canonical_id" in df.columns and "canonical_id" in canonical_df.columns:
-            before_nonempty = 0
-            for c in ["album_id", "album_name"]:
-                if c in df.columns:
-                    before_nonempty += int(df[c].fillna("").astype(str).str.strip().ne("").sum())
-
-            need_backfill = (
-                ("album_id" not in df.columns and "album_name" not in df.columns)
-                or (
-                    ("album_id" in df.columns and df["album_id"].fillna("").astype(str).str.strip().eq("").all())
-                    and ("album_name" in df.columns and df["album_name"].fillna("").astype(str).str.strip().eq("").all())
-                )
-                or (
-                    ("album_id" in df.columns and df["album_id"].fillna("").astype(str).str.strip().eq("").all())
-                    and ("album_name" not in df.columns)
-                )
-                or (
-                    ("album_name" in df.columns and df["album_name"].fillna("").astype(str).str.strip().eq("").all())
-                    and ("album_id" not in df.columns)
-                )
-            )
-
-            if need_backfill:
-                canon_cols = ["canonical_id"] + [c for c in ["album_id", "album_name"] if c in canonical_df.columns]
-                if len(canon_cols) > 1:
-                    canon_album = canonical_df[canon_cols].copy()
-                    canon_album = canon_album.drop_duplicates(subset=["canonical_id"], keep="first")
-                    df = df.merge(
-                        canon_album,
-                        on="canonical_id",
-                        how="left",
-                        suffixes=("", "_canon_backfill"),
-                    )
-
-                    filled_now = 0
-                    for c in ["album_id", "album_name"]:
-                        c_bf = f"{c}_canon_backfill"
-                        if c_bf in df.columns:
-                            if c not in df.columns:
-                                df[c] = df[c_bf]
-                            else:
-                                left = df[c].fillna("").astype(str).str.strip()
-                                right = df[c_bf].fillna("").astype(str).str.strip()
-                                df[c] = left.where(left.ne(""), right)
-                            df = df.drop(columns=[c_bf], errors="ignore")
-                    for c in ["album_id", "album_name"]:
-                        if c in df.columns:
-                            filled_now += int(df[c].fillna("").astype(str).str.strip().ne("").sum())
-                    if verbose:
-                        print(f"album backfill from canonical: OK (n filled {max(0, filled_now - before_nonempty)})")
-
-        # Normalizar posibles columnas
-        if "album_id" in df.columns:
-            df["album_id"] = df["album_id"].astype(str).str.strip()
-        if "album_name_trim" in df.columns:
-            df["album_name_trim"] = df["album_name_trim"].astype(str).str.strip()
-        if "album_name_raw" in df.columns:
-            df["album_name_raw"] = df["album_name_raw"].astype(str).str.strip()
-        if "album_name" in df.columns:
-            df["album_name"] = df["album_name"].astype(str).str.strip()
-
-        def _norm_text(s: str) -> str:
-            s = str(s or "").strip().lower()
-            s = re.sub(r"\s{2,}", " ", s)
-            return s
-
-        # Construir album_key
-        # 1) album_id (si existe y no vac?o)
-        # 2) fallback robusto: normalize(album_name) || normalize(artists_canon|artists_display)
-        df["album_key"] = ""
-
-        if "album_id" in df.columns:
-            df["album_id"] = df["album_id"].fillna("").astype(str).str.strip()
-            mask_id = df["album_id"].ne("")
-            df.loc[mask_id, "album_key"] = df.loc[mask_id, "album_id"]
-
-        if df["album_key"].eq("").any():
-            name_series = None
-            for c in ["album_name", "album_name_trim", "album_name_raw"]:
-                if c in df.columns:
-                    cand = df[c].fillna("").astype(str).str.strip()
-                    if cand.ne("").any():
-                        name_series = cand
-                        break
-
-            if "artists_canon" in df.columns:
-                artist_series = df["artists_canon"].fillna("").astype(str)
-            elif "artists_display" in df.columns:
-                artist_series = df["artists_display"].fillna("").astype(str)
-            else:
-                artist_series = pd.Series([""] * len(df), index=df.index)
-
-            if name_series is not None:
-                mask = df["album_key"].eq("") & name_series.astype(str).str.strip().ne("")
-                df.loc[mask, "album_key"] = (
-                    name_series.loc[mask].map(_norm_text) + "||" + artist_series.loc[mask].map(_norm_text)
-                )
-
-        if df["album_key"].astype(str).str.strip().eq("").all():
-            miss = df.loc[:, ["canonical_id", "title_display", "artists_display", "spotify_url"]].copy()
-            miss_path = reports_prefix / "deck_album_missing.csv"
-            miss.to_csv(miss_path, index=False, encoding="utf-8")
-            raise ValueError(
-                "Has pedido cap de álbum (--max-per-album > 0) pero no hay 'album_id' ni 'album_name' usable. "
-                "Necesitamos propagar album_id (ideal) o al menos album_name (fallback) hasta el dataset. "
-                f"Ver ejemplo en: {miss_path}"
-            )
-
-
-    # Owners list (hard)
-    if "owners_list" not in df.columns:
-        raise ValueError("Falta columna interna owners_list.")
-    df["owners_list"] = df["owners_list"].apply(lambda x: x if isinstance(x, list) else parse_owners_field(x))
-    df["owners_list"] = df["owners_list"].apply(lambda arr: sorted(set([str(o).strip() for o in arr if str(o).strip()]), key=lambda s: s.lower()))
-    df["owners_count"] = df["owners_list"].apply(len)
-
-    # Preferimos que haya spotify_url si se pide
-    if "spotify_url" in df.columns:
-        _surl = df["spotify_url"]
-    else:
-        _surl = pd.Series([""] * len(df), index=df.index)
-    df["has_spotify_url"] = _surl.astype(str).str.strip().ne("").astype(int)
-
-    owners_universe = sorted(set([o for arr in df["owners_list"].tolist() for o in arr]), key=lambda s: s.lower())
-    owner_counts: Dict[str, int] = {o: 0 for o in owners_universe}
-    album_counts: Dict[str, int] = defaultdict(int)
-
-    selected_ids: List[str] = []
-    selected_rows: List[dict] = []
-    violations = {
-        "album_cap_violations": 0,
-        "owner_cap_violations": 0,
-    }
-
-    def can_take(row, enforce_owner_cap=True, enforce_album_cap=True) -> bool:
-        cid = row["canonical_id"]
-        if cid in selected_ids:
-            return False
-
-        if max_per_album > 0 and enforce_album_cap:
-            aid = str(row.get("album_key", "")).strip()
-            if aid and album_counts[aid] >= max_per_album:
-                return False
-
-        if enforce_owner_cap and owner_cap_cards > 0:
-            po = choose_primary_owner(row["owners_list"], owner_counts)
-            if po and owner_counts.get(po, 0) >= owner_cap_cards:
-                return False
-
-        return True
-
-    def add_row(row, note_violation_owner=False, note_violation_album=False) -> None:
-        cid = row["canonical_id"]
-        selected_ids.append(cid)
-
-        po = choose_primary_owner(row["owners_list"], owner_counts)
-        if po:
-            owner_counts[po] = owner_counts.get(po, 0) + 1
-
-        if max_per_album > 0:
-            aid = str(row.get("album_key", "")).strip()
-            if aid:
-                album_counts[aid] += 1
-
-        r = dict(row)
-        r["primary_owner"] = po
-        if note_violation_owner:
-            r["_violation_owner_cap"] = 1
-            violations["owner_cap_violations"] += 1
-        else:
-            r["_violation_owner_cap"] = 0
-        if note_violation_album:
-            r["_violation_album_cap"] = 1
-            violations["album_cap_violations"] += 1
-        else:
-            r["_violation_album_cap"] = 0
-        selected_rows.append(r)
-
-    # Orden base de preferencia
-    sort_cols = ["owners_count", "has_spotify_url", "year", "artists_display", "title_display", "canonical_id"]
-    df_sorted = df.sort_values(sort_cols, ascending=[False, False, True, True, True, True])
-
-    # 1) Cobertura: 1 por año
-    years = sorted(df_sorted["year"].unique().tolist())
-    for y in years:
-        if len(selected_ids) >= limit:
-            break
-        cands = df_sorted[df_sorted["year"] == y]
-        # Intento 1: respetando caps
-        picked = None
-        for _, row in cands.iterrows():
-            if can_take(row, enforce_owner_cap=True, enforce_album_cap=True):
-                picked = row
-                break
-        if picked is None:
-            # Intento 2: relajar owner cap para asegurar año
-            for _, row in cands.iterrows():
-                if can_take(row, enforce_owner_cap=False, enforce_album_cap=True):
-                    picked = row
-                    add_row(picked, note_violation_owner=True, note_violation_album=False)
-                    break
-        if picked is None:
-            # Intento 3: relajar album cap (último recurso) para asegurar año
-            for _, row in cands.iterrows():
-                if can_take(row, enforce_owner_cap=False, enforce_album_cap=False):
-                    picked = row
-                    add_row(picked, note_violation_owner=True, note_violation_album=True)
-                    break
-        if picked is not None and picked["canonical_id"] not in selected_ids:
-            add_row(picked)
-
-    # 2) Relleno hasta limit con caps (y relax opcional de owner cap si nos atascamos)
-    def fill(pass_enforce_owner: bool) -> int:
-        added = 0
-        for _, row in df_sorted.iterrows():
-            if len(selected_ids) >= limit:
-                break
-            if can_take(row, enforce_owner_cap=pass_enforce_owner, enforce_album_cap=True):
-                add_row(row, note_violation_owner=(not pass_enforce_owner), note_violation_album=False)
-                added += 1
-        return added
-
-    # pass 1: caps estrictos
-    fill(pass_enforce_owner=True)
-
-    if len(selected_ids) < limit and relax_owner_cap_if_needed and owner_cap_cards > 0:
-        # pass 2: relajar owner cap (manteniendo album cap)
-        fill(pass_enforce_owner=False)
-
-    out = pd.DataFrame(selected_rows)
-
-    # Reporte de selección
-    out_report = out[[
-        "canonical_id", "card_id", "year", "owners_count", "primary_owner", "album_id",
-        "_violation_owner_cap", "_violation_album_cap", "title_display", "artists_display", "spotify_url", "owners"
-    ]].copy() if "album_id" in out.columns else out[[
-        "canonical_id", "card_id", "year", "owners_count", "primary_owner",
-        "_violation_owner_cap", "_violation_album_cap", "title_display", "artists_display", "spotify_url", "owners"
-    ]].copy()
-    sel_path = reports_prefix / "deck_selection.csv"
-    out_report.to_csv(sel_path, index=False, encoding="utf-8")
-
-    meta = {
-        "limit": limit,
-        "selected": int(len(out)),
-        "years_total": int(len(years)),
-        "years_covered": int(out["year"].nunique()) if len(out) else 0,
-        "owners_universe": owners_universe,
-        "owner_cap_cards": int(owner_cap_cards),
-        "max_per_album": int(max_per_album),
-        **violations,
-        "owner_counts_primary": dict(sorted(owner_counts.items(), key=lambda kv: (-kv[1], kv[0].lower()))),
-    }
-    (reports_prefix / "deck_selection_meta.json").write_text(
-        json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8"
     )
+    owners_df["owners_count"] = owners_df["owners_list"].apply(len)
+    owners_df["owners"] = owners_df["owners_list"].apply(owners_to_display)
 
-    if len(out) < limit:
-        # No lo hacemos fatal: dejamos el deck parcial pero avisamos
-        warn_path = reports_prefix / "deck_selection_warning.txt"
-        warn_path.write_text(
-            f"No se pudo llenar hasta {limit}. Seleccionadas: {len(out)}.\n"
-            f"Revisa caps (owner_cap/album_cap) o incrementa slack.\n",
-            encoding="utf-8",
-        )
+    instances_df = linked.groupby("canonical_id", as_index=False).size().rename(columns={"size": "instances_count"})
+
+    summary = rep.merge(owners_df, on="canonical_id", how="outer")
+    summary = summary.merge(instances_df, on="canonical_id", how="outer")
+
+    for text_col in ["spotify_url", "spotify_uri", "track_id", "album_id", "album_name", "owners"]:
+        if text_col not in summary.columns:
+            summary[text_col] = ""
+        summary[text_col] = summary[text_col].fillna("").astype(str)
+
+    if "owners_list" not in summary.columns:
+        summary["owners_list"] = [[] for _ in range(len(summary))]
+    summary["owners_list"] = summary["owners_list"].apply(lambda x: x if isinstance(x, list) else parse_owners_field(x))
+
+    for col in ["owners_count", "instances_count"]:
+        if col not in summary.columns:
+            summary[col] = 0
+        summary[col] = pd.to_numeric(summary[col], errors="coerce").fillna(0).astype(int)
+
+    owners_universe = sorted({str(v).strip() for v in linked["owner_label"].tolist() if str(v).strip()}, key=lambda s: s.lower())
+    return summary, owners_universe
+
+
+def build_candidates(canon: pd.DataFrame, linked_summary: pd.DataFrame, expansion: str) -> pd.DataFrame:
+    canon = canon.copy().fillna("")
+    if "canonical_id" not in canon.columns:
+        raise ValueError("canonical input must contain canonical_id")
+
+    canon["canonical_id"] = canon["canonical_id"].astype(str).str.strip()
+    canon = canon[canon["canonical_id"] != ""].copy()
+
+    for col in ["title_canon", "artists_canon", "year", "year_confidence", "year_source", "year_note", "album_id", "album_name"]:
+        if col not in canon.columns:
+            canon[col] = ""
+
+    out = canon.merge(linked_summary, on="canonical_id", how="left")
+
+    for col in ["spotify_url", "spotify_uri", "track_id", "album_id", "album_name", "owners", "year_source", "year_note"]:
+        if col not in out.columns:
+            out[col] = ""
+        out[col] = out[col].fillna("").astype(str)
+
+    if "owners_list" not in out.columns:
+        out["owners_list"] = [[] for _ in range(len(out))]
+    out["owners_list"] = out["owners_list"].apply(lambda x: x if isinstance(x, list) else parse_owners_field(x))
+
+    for col in ["owners_count", "instances_count"]:
+        if col not in out.columns:
+            out[col] = 0
+        out[col] = pd.to_numeric(out[col], errors="coerce").fillna(0).astype(int)
+
+    out["year_confidence"] = out["year_confidence"].apply(parse_float)
+    out["year_int"] = out["year"].apply(parse_year_int)
+
+    out["title_display"] = out["title_canon"].astype(str).apply(clean_title_display)
+    out["artists_display"] = out["artists_canon"].astype(str).str.strip()
+    out["has_spotify_url"] = out["spotify_url"].astype(str).str.strip().ne("").astype(int)
+
+    out["owners"] = out["owners_list"].apply(owners_to_display)
+    out["expansion_code"] = expansion
+    out["card_id"] = out["expansion_code"].astype(str) + "-" + out["canonical_id"].astype(str).str.slice(0, 8)
+
+    out["collapse_key"] = out.apply(
+        lambda r: build_collapse_key(str(r.get("title_canon", "")), str(r.get("artists_canon", ""))),
+        axis=1,
+    )
+    out["album_key"] = out.apply(
+        lambda r: build_album_key(str(r.get("album_id", "")), str(r.get("album_name", "")), str(r.get("canonical_id", ""))),
+        axis=1,
+    )
 
     return out
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--expansion", default="I")
+def round_by_mode(value: float, mode: str) -> int:
+    if mode == "floor":
+        return int(math.floor(value))
+    if mode == "ceil":
+        return int(math.ceil(value))
+    return int(math.floor(value + 0.5))
 
-    # Legacy: se mantiene para localizar instances_linked_<exp>_<owner>.csv si no hay autodetect
-    ap.add_argument("--owner", default="Guille")
 
-    ap.add_argument("--input-canonical", default=None)
-    ap.add_argument("--input-linked", default=None)
+def build_manual_year_queue(
+    candidates: pd.DataFrame,
+    owners_universe: List[str],
+    expansion: str,
+    year_confidence_min: float,
+    manual_alpha: float,
+    manual_rounding: str,
+    manual_min_k: int,
+    manual_queue_path: Path,
+    reports_prefix: Path,
+) -> Tuple[pd.DataFrame, int]:
+    owners_n = len(owners_universe)
+    k = max(int(manual_min_k), round_by_mode(float(manual_alpha) * float(owners_n), manual_rounding))
 
-    ap.add_argument("--output-csv", default=None)
-    ap.add_argument("--output-json", default=None)
+    year_invalid = candidates["year_int"].isna() | (candidates["year_confidence"] < float(year_confidence_min))
+    queue = candidates[year_invalid & (candidates["owners_count"] >= k)].copy()
 
-    # NUEVO: build de deck limitado + constraints
-    ap.add_argument("--limit", type=int, default=300, help="Número de cartas del deck (0 = sin límite)")
-    ap.add_argument("--prefer-have-spotify-url", action="store_true", help="En desempates, prioriza que haya spotify_url")
-    ap.add_argument("--max-per-album", type=int, default=3, help="Máximo de cartas por album_id (0 = desactivar)")
-    ap.add_argument("--owner-cap-percent", type=float, default=0.0, help="Cap por owner como porcentaje (0 = auto)")
-    ap.add_argument("--owner-cap-cards", type=int, default=0, help="Cap por owner en nº de cartas (0 = auto)")
-    ap.add_argument("--owner-cap-slack", type=float, default=0.12, help="Slack sumado a 1/N en modo auto (ej: 0.12)")
-    ap.add_argument("--relax-owner-cap-if-needed", action="store_true", help="Si no llena, relaja owner cap (mantiene album cap)")
-    ap.add_argument("--verbose", action="store_true", help="Logging detallado opcional")
+    queue["manual_k"] = int(k)
+    queue["owners_universe_count"] = int(owners_n)
+    queue["year_confidence_min"] = float(year_confidence_min)
+    queue["queue_reason"] = "year_missing_or_low_confidence_and_high_owner_presence"
 
-    args = ap.parse_args()
+    queue = queue.sort_values(
+        ["owners_count", "instances_count", "year_confidence", "canonical_id"],
+        ascending=[False, False, True, True],
+    )
+
+    queue_cols = [
+        "canonical_id",
+        "title_canon",
+        "artists_canon",
+        "owners",
+        "owners_count",
+        "instances_count",
+        "year",
+        "year_confidence",
+        "year_source",
+        "year_note",
+        "manual_k",
+        "owners_universe_count",
+        "year_confidence_min",
+        "queue_reason",
+    ]
+    for col in queue_cols:
+        if col not in queue.columns:
+            queue[col] = ""
+    queue = queue[queue_cols]
+
+    manual_queue_path.parent.mkdir(parents=True, exist_ok=True)
+    queue.to_csv(manual_queue_path, index=False, encoding="utf-8")
+
+    queue_report_path = reports_prefix / f"manual_year_queue_{expansion}.csv"
+    queue_report_path.parent.mkdir(parents=True, exist_ok=True)
+    queue.to_csv(queue_report_path, index=False, encoding="utf-8")
+
+    return queue, int(k)
+
+
+def collapse_versions(candidates: pd.DataFrame, expansion: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    chosen_rows: List[pd.Series] = []
+    report_rows: List[Dict[str, object]] = []
+
+    for collapse_key, group in candidates.groupby("collapse_key", dropna=False):
+        ordered = group.sort_values(
+            ["owners_count", "instances_count", "has_spotify_url", "canonical_id"],
+            ascending=[False, False, False, True],
+        )
+        chosen = ordered.iloc[0]
+        chosen_rows.append(chosen)
+
+        report_rows.append(
+            {
+                "collapse_key": str(collapse_key),
+                "canonical_id_chosen": str(chosen.get("canonical_id", "")),
+                "chosen_reason": "owners_count_desc>instances_count_desc>has_spotify_url_desc",
+                "candidate_count": int(len(ordered)),
+                "candidate_ids": json.dumps(ordered["canonical_id"].astype(str).tolist(), ensure_ascii=False),
+                "candidate_titles": json.dumps(ordered["title_canon"].astype(str).tolist(), ensure_ascii=False),
+                "candidate_artists": json.dumps(ordered["artists_canon"].astype(str).tolist(), ensure_ascii=False),
+                "candidate_owners_count": json.dumps(ordered["owners_count"].astype(int).tolist(), ensure_ascii=False),
+                "candidate_instances_count": json.dumps(ordered["instances_count"].astype(int).tolist(), ensure_ascii=False),
+                "candidate_has_spotify_url": json.dumps(ordered["has_spotify_url"].astype(int).tolist(), ensure_ascii=False),
+            }
+        )
+
+    collapsed = pd.DataFrame(chosen_rows).reset_index(drop=True)
+    collapse_report = pd.DataFrame(report_rows)
+
+    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    collapse_path = REPORTS_DIR / f"collapse_{expansion}.csv"
+    collapse_report.to_csv(collapse_path, index=False, encoding="utf-8")
+
+    return collapsed, collapse_report
+
+
+def select_deck(
+    pool: pd.DataFrame,
+    limit: int,
+    max_per_album: int,
+) -> Tuple[pd.DataFrame, Dict[str, int]]:
+    if pool.empty:
+        return pool.copy(), {"album_cap_blocks": 0}
+
+    target_limit = int(limit) if int(limit) > 0 else int(len(pool))
+
+    ordered_pool = pool.sort_values(
+        ["year_int", "owners_count", "instances_count", "has_spotify_url", "canonical_id"],
+        ascending=[True, False, False, False, True],
+    )
+
+    year_groups: Dict[int, List[dict]] = {}
+    for year_value, group in ordered_pool.groupby("year_int", dropna=True):
+        year_groups[int(year_value)] = group.to_dict(orient="records")
+
+    years_sorted = sorted(year_groups.keys())
+    pointers: Dict[int, int] = {year: 0 for year in years_sorted}
+    year_counts: Dict[int, int] = defaultdict(int)
+    album_counts: Dict[str, int] = defaultdict(int)
+
+    selected_rows: List[dict] = []
+    selected_ids: set[str] = set()
+    stats = {"album_cap_blocks": 0}
+
+    def can_take(row: dict) -> bool:
+        if str(row.get("canonical_id", "")) in selected_ids:
+            return False
+        if max_per_album <= 0:
+            return True
+        album_key = str(row.get("album_key", "")).strip() or f"cid::{row.get('canonical_id', '')}"
+        return album_counts[album_key] < max_per_album
+
+    def advance(year: int) -> bool:
+        rows = year_groups[year]
+        idx = pointers[year]
+        while idx < len(rows):
+            row = rows[idx]
+            cid = str(row.get("canonical_id", ""))
+            if cid in selected_ids:
+                idx += 1
+                continue
+            if max_per_album > 0:
+                album_key = str(row.get("album_key", "")).strip() or f"cid::{cid}"
+                if album_counts[album_key] >= max_per_album:
+                    stats["album_cap_blocks"] += 1
+                    idx += 1
+                    continue
+            break
+        pointers[year] = idx
+        return idx < len(rows)
+
+    def pop_next(year: int) -> Optional[dict]:
+        if not advance(year):
+            return None
+        rows = year_groups[year]
+        idx = pointers[year]
+        row = rows[idx]
+        pointers[year] = idx + 1
+        return row
+
+    def add_row(row: dict, phase: str) -> None:
+        cid = str(row.get("canonical_id", ""))
+        if cid in selected_ids:
+            return
+        if not can_take(row):
+            return
+
+        selected_ids.add(cid)
+        year_val = int(row.get("year_int"))
+        year_counts[year_val] += 1
+
+        album_key = str(row.get("album_key", "")).strip() or f"cid::{cid}"
+        if max_per_album > 0:
+            album_counts[album_key] += 1
+
+        out = dict(row)
+        out["_selection_phase"] = phase
+        out["_selection_order"] = len(selected_rows) + 1
+        selected_rows.append(out)
+
+    for year in years_sorted:
+        if len(selected_rows) >= target_limit:
+            break
+        row = pop_next(year)
+        if row is not None:
+            add_row(row, phase="coverage")
+
+    while len(selected_rows) < target_limit:
+        active_years = [year for year in years_sorted if advance(year)]
+        if not active_years:
+            break
+
+        target_year = min(active_years, key=lambda y: (year_counts[y], y))
+        row = pop_next(target_year)
+        if row is None:
+            continue
+        add_row(row, phase="waterfill")
+
+    selected = pd.DataFrame(selected_rows)
+    return selected, stats
+
+
+def write_deck_reports(
+    valid_pool: pd.DataFrame,
+    deck_out: pd.DataFrame,
+    reports_prefix: Path,
+) -> None:
+    reports_prefix.mkdir(parents=True, exist_ok=True)
+
+    year_pool = valid_pool.groupby("year_int", as_index=False).size().rename(columns={"size": "pool_count"})
+    year_pool = year_pool.sort_values("year_int")
+    year_pool.to_csv(reports_prefix / "year_distribution_pool.csv", index=False, encoding="utf-8")
+
+    year_col = "year_int" if "year_int" in deck_out.columns else "year"
+    if deck_out.empty or year_col not in deck_out.columns:
+        year_deck = pd.DataFrame(columns=["year_int", "deck_count"])
+    else:
+        year_deck = deck_out.groupby(year_col, as_index=False).size().rename(columns={"size": "deck_count"})
+        year_deck = year_deck.rename(columns={year_col: "year_int"}).sort_values("year_int")
+    year_deck.to_csv(reports_prefix / "year_distribution_deck.csv", index=False, encoding="utf-8")
+
+    if deck_out.empty:
+        owners_dist = pd.DataFrame(columns=["owners_count", "cards"])
+    else:
+        owners_dist = deck_out.groupby("owners_count", as_index=False).size().rename(columns={"size": "cards"})
+        owners_dist = owners_dist.sort_values("owners_count")
+    owners_dist.to_csv(reports_prefix / "owners_count_distribution_deck.csv", index=False, encoding="utf-8")
+
+    if not deck_out.empty:
+        deck_out.to_csv(reports_prefix / "deck_selection.csv", index=False, encoding="utf-8")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--expansion", default="I")
+    parser.add_argument("--owner", default="Guille", help="Legacy fallback only")
+
+    parser.add_argument("--input-canonical", default=None)
+    parser.add_argument("--input-linked", default=None)
+    parser.add_argument("--output-csv", default=None)
+    parser.add_argument("--output-json", default=None)
+
+    parser.add_argument("--limit", type=int, default=300)
+    parser.add_argument("--max-per-album", type=int, default=3)
+    parser.add_argument("--prefer-have-spotify-url", action="store_true")
+
+    parser.add_argument("--year-confidence-min", type=float, default=0.80)
+    parser.add_argument("--manual-year-alpha", type=float, default=0.67)
+    parser.add_argument("--manual-year-rounding", choices=["round", "floor", "ceil"], default="round")
+    parser.add_argument("--manual-year-min-k", type=int, default=2)
+    parser.add_argument("--manual-year-queue", default=None)
+
+    parser.add_argument("--owner-cap-percent", type=float, default=0.0)
+    parser.add_argument("--owner-cap-cards", type=int, default=0)
+    parser.add_argument("--owner-cap-slack", type=float, default=0.12)
+    parser.add_argument("--relax-owner-cap-if-needed", action="store_true")
+    parser.add_argument("--verbose", action="store_true")
+
+    args = parser.parse_args()
 
     expansion = args.expansion
-    owner_legacy = args.owner
 
-    in_canon = (
+    in_canonical = (
         Path(args.input_canonical)
         if args.input_canonical
         else (PROCESSED_DIR / f"canonical_songs_{expansion}_enriched.csv")
     )
+    if not in_canonical.exists():
+        raise FileNotFoundError(f"canonical input not found: {in_canonical}")
 
-    if not in_canon.exists():
-        raise FileNotFoundError(f"No existe: {in_canon}")
+    linked = load_linked_instances(expansion=expansion, owner_legacy=args.owner, input_linked=args.input_linked)
+    linked_summary, owners_universe = prepare_linked_summary(linked)
 
-    linked = load_linked_instances(
-        expansion=expansion,
-        owner_legacy=owner_legacy,
-        input_linked=args.input_linked,
-    )
-
-    out_csv = (
-        Path(args.output_csv)
-        if args.output_csv
-        else (PROCESSED_DIR / f"deck_{expansion}.csv")
-    )
-    out_json = (
-        Path(args.output_json)
-        if args.output_json
-        else (PROCESSED_DIR / f"deck_{expansion}.json")
-    )
+    canon = pd.read_csv(in_canonical).fillna("")
+    candidates = build_candidates(canon=canon, linked_summary=linked_summary, expansion=expansion)
 
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
+    MANUAL_DIR.mkdir(parents=True, exist_ok=True)
 
-    canon = pd.read_csv(in_canon).fillna("")
-
-    # Normalizar columnas esperadas (canon)
-    for col in [
-        "canonical_id",
-        "title_canon",
-        "artists_canon",
-        "year",
-        "first_seen_month",
-        "first_seen_expansion",
-    ]:
-        if col not in canon.columns:
-            canon[col] = ""
-
-    # Normalizar columnas esperadas (linked)
-    for col in [
-        "canonical_id",
-        "spotify_url",
-        "spotify_uri",
-        "track_id",
-        "owner_label",
-        "owners",
-        "album_id",
-        "album_name",
-    ]:
-        if col not in linked.columns:
-            linked[col] = ""
-
-    canon["canonical_id"] = canon["canonical_id"].astype(str).str.strip()
-    linked["canonical_id"] = linked["canonical_id"].astype(str).str.strip()
-
-    # Representante Spotify por canonical_id (para QR/link) + álbum si existe
-    agg_dict = {
-        "spotify_url": ("spotify_url", pick_first_nonempty),
-        "spotify_uri": ("spotify_uri", pick_first_nonempty),
-        "track_id": ("track_id", pick_first_nonempty),
-    }
-    if "album_id" in linked.columns:
-        agg_dict["album_id"] = ("album_id", pick_first_nonempty)
-    if "album_name" in linked.columns:
-        agg_dict["album_name"] = ("album_name", pick_first_nonempty)
-
-    rep = linked.groupby("canonical_id", as_index=False).agg(**agg_dict)
-
-    # Owners por canonical_id: siempre agregamos owner_label únicos
-    owners_rep = linked.groupby("canonical_id", as_index=False).agg(
-        owners_list=("owner_label", lambda s: sorted({str(x).strip() for x in s.tolist() if str(x).strip()}, key=lambda x: x.lower()))
-    )
-    owners_rep["owners"] = owners_rep["owners_list"].apply(owners_to_display)
-
-    deck = canon[
-        [
-            "canonical_id",
-            "title_canon",
-            "artists_canon",
-            "year",
-            "first_seen_expansion",
-            "first_seen_month",
-        ]
-    ].copy()
-
-    deck = deck.merge(rep, on="canonical_id", how="left").fillna("")
-    deck = deck.merge(owners_rep, on="canonical_id", how="left")
-
-    # IMPORTANTE: no usar fillna con listas (pandas no lo soporta). Normalizamos columna a columna.
-    if "owners_list" not in deck.columns:
-        deck["owners_list"] = [[] for _ in range(len(deck))]
-    else:
-        deck["owners_list"] = deck["owners_list"].apply(lambda x: x if isinstance(x, list) else [])
-    # owners string siempre derivado y ordenado
-    deck["owners"] = deck["owners_list"].apply(owners_to_display)
-
-
-    deck["expansion_code"] = expansion
-    deck["card_id"] = deck["expansion_code"].astype(str) + "-" + deck["canonical_id"].astype(str).str.slice(0, 8)
-
-    # Display
-    deck["title_display"] = deck["title_canon"].apply(clean_title_display)
-    deck["artists_display"] = deck["artists_canon"].astype(str).str.strip()
-
-    # Year como INT-string para carta (y mantener year original si lo quieres)
-    deck["year_int"] = deck["year"].apply(fmt_year_int)
-
-    # Album fallback desde canon si existiera
-    if "album_id" not in deck.columns and "album_id" in canon.columns:
-        deck["album_id"] = canon["album_id"].astype(str).str.strip()
-    if "album_name" not in deck.columns and "album_name" in canon.columns:
-        deck["album_name"] = canon["album_name"].astype(str).str.strip()
-
-    # Flags útiles
-    deck["needs_manual_year"] = (deck["year_int"].astype(str).str.strip() == "").astype(int)
-    if "spotify_url" in deck.columns:
-        _surl2 = deck["spotify_url"]
-    else:
-        _surl2 = pd.Series([""] * len(deck), index=deck.index)
-    deck["missing_spotify_url"] = _surl2.astype(str).str.strip().eq("").astype(int)
-
-    # Orden estable base (para modo sin limit)
-    year_sort = pd.to_numeric(deck["year_int"], errors="coerce").fillna(9999).astype(int)
-    deck["_year_sort"] = year_sort
-
-    # Selección con constraints
-    limit = int(args.limit or 0)
-    prefer_have_spotify = bool(args.prefer_have_spotify_url)
-
-    # Cap owner (auto)
-    owners_universe = sorted(set([o for arr in deck["owners_list"].tolist() for o in (arr if isinstance(arr, list) else [])]), key=lambda s: s.lower())
-    owner_cap_cards = compute_owner_cap_cards(
-        limit=limit if limit > 0 else max(1, len(deck)),
-        owners=owners_universe,
-        owner_cap_percent=float(args.owner_cap_percent or 0.0),
-        owner_cap_cards=int(args.owner_cap_cards or 0),
-        owner_cap_slack=float(args.owner_cap_slack or 0.0),
-    )
-
-    # Prefijo reports por expansión
     reports_prefix = REPORTS_DIR / f"deck_build_{expansion}"
     reports_prefix.mkdir(parents=True, exist_ok=True)
 
-    if limit > 0:
-        selected = select_deck_300(
-            df=deck,
-            limit=limit,
-            max_per_album=int(args.max_per_album or 0),
-            owner_cap_cards=int(owner_cap_cards),
-            relax_owner_cap_if_needed=bool(args.relax_owner_cap_if_needed),
-            prefer_have_spotify_url=prefer_have_spotify,
-            reports_prefix=reports_prefix,
-            canonical_df=canon,
-            verbose=bool(args.verbose),
-        )
-        deck_out = selected.copy()
+    manual_queue_path = (
+        Path(args.manual_year_queue)
+        if args.manual_year_queue
+        else (MANUAL_DIR / f"manual_year_queue_{expansion}.csv")
+    )
+
+    manual_queue, manual_k = build_manual_year_queue(
+        candidates=candidates,
+        owners_universe=owners_universe,
+        expansion=expansion,
+        year_confidence_min=float(args.year_confidence_min),
+        manual_alpha=float(args.manual_year_alpha),
+        manual_rounding=str(args.manual_year_rounding),
+        manual_min_k=int(args.manual_year_min_k),
+        manual_queue_path=manual_queue_path,
+        reports_prefix=reports_prefix,
+    )
+
+    collapsed, collapse_report = collapse_versions(candidates, expansion=expansion)
+
+    valid_pool = collapsed[
+        collapsed["year_int"].notna() & (collapsed["year_confidence"] >= float(args.year_confidence_min))
+    ].copy()
+
+    valid_pool = valid_pool.sort_values(
+        ["year_int", "owners_count", "instances_count", "has_spotify_url", "canonical_id"],
+        ascending=[True, False, False, False, True],
+    )
+
+    deck_out, selection_stats = select_deck(
+        pool=valid_pool,
+        limit=int(args.limit),
+        max_per_album=int(args.max_per_album),
+    )
+
+    if not deck_out.empty:
+        deck_out["year"] = deck_out["year_int"].astype(int)
     else:
-        deck_out = deck.sort_values(
-            ["_year_sort", "artists_display", "title_display", "canonical_id"]
-        ).copy()
+        deck_out["year"] = pd.Series(dtype=int)
 
-    if "_year_sort" in deck_out.columns:
-        deck_out = deck_out.drop(columns=["_year_sort"], errors="ignore")
-    if "_year_sort" in deck.columns:
-        deck = deck.drop(columns=["_year_sort"], errors="ignore")
+    keep_cols = [
+        "card_id",
+        "expansion_code",
+        "canonical_id",
+        "title_display",
+        "artists_display",
+        "year_int",
+        "year",
+        "year_confidence",
+        "year_source",
+        "year_note",
+        "spotify_url",
+        "spotify_uri",
+        "track_id",
+        "owners",
+        "owners_count",
+        "instances_count",
+        "album_id",
+        "album_name",
+        "album_key",
+        "collapse_key",
+        "_selection_phase",
+        "_selection_order",
+    ]
+    for col in keep_cols:
+        if col not in deck_out.columns:
+            deck_out[col] = ""
+    deck_out = deck_out[keep_cols]
 
-    # Año final: forzamos year int si se seleccionó
-    if "year" in deck_out.columns:
-        # si viene como string, intenta
-        y = pd.to_numeric(deck_out["year"], errors="coerce")
-        if y.notna().all():
-            deck_out["year"] = y.astype(int)
+    out_csv = Path(args.output_csv) if args.output_csv else (PROCESSED_DIR / f"deck_{expansion}.csv")
+    out_json = Path(args.output_json) if args.output_json else (PROCESSED_DIR / f"deck_{expansion}.json")
 
-    # CSV/JSON
+    out_csv.parent.mkdir(parents=True, exist_ok=True)
+    out_json.parent.mkdir(parents=True, exist_ok=True)
+
     deck_out.to_csv(out_csv, index=False, encoding="utf-8")
-    out_payload = deck_out.to_dict(orient="records")
-    out_json.write_text(json.dumps(out_payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    out_json.write_text(json.dumps(deck_out.to_dict(orient="records"), ensure_ascii=False, indent=2), encoding="utf-8")
 
-    # QC report
+    write_deck_reports(valid_pool=valid_pool, deck_out=deck_out, reports_prefix=reports_prefix)
+
+    album_cap_violations = 0
+    if not deck_out.empty and int(args.max_per_album) > 0:
+        album_counts = deck_out.groupby("album_key").size()
+        album_cap_violations = int((album_counts > int(args.max_per_album)).sum())
+
     qc = {
-        "cards": [len(deck_out)],
-        "limit": [limit],
-        "unique_years_in_deck": [int(pd.to_numeric(deck_out.get("year", ""), errors="coerce").nunique()) if len(deck_out) else 0],
-        "missing_year": [int(deck_out.get("needs_manual_year", pd.Series(dtype=int)).sum()) if "needs_manual_year" in deck_out.columns else 0],
-        "missing_spotify_url": [int(deck_out.get("missing_spotify_url", pd.Series(dtype=int)).sum()) if "missing_spotify_url" in deck_out.columns else 0],
-        "dup_card_id": [int(deck_out["card_id"].duplicated().sum())],
-        "dup_canonical_id": [int(deck_out["canonical_id"].duplicated().sum())],
-        "owners_universe": [", ".join(owners_universe)],
-        "owner_cap_cards": [int(owner_cap_cards) if limit > 0 else 0],
-        "max_per_album": [int(args.max_per_album or 0) if limit > 0 else 0],
+        "cards": [int(len(deck_out))],
+        "limit": [int(args.limit)],
+        "pool_valid_after_collapse": [int(len(valid_pool))],
+        "pool_total_after_collapse": [int(len(collapsed))],
+        "collapse_groups": [int(len(collapse_report))],
+        "unique_years_pool": [int(valid_pool["year_int"].nunique()) if not valid_pool.empty else 0],
+        "unique_years_in_deck": [int(deck_out["year"].nunique()) if not deck_out.empty else 0],
+        "owners_universe_count": [int(len(owners_universe))],
+        "manual_year_k": [int(manual_k)],
+        "manual_year_queue_size": [int(len(manual_queue))],
+        "year_confidence_min": [float(args.year_confidence_min)],
+        "max_per_album": [int(args.max_per_album)],
+        "album_cap_blocks": [int(selection_stats.get("album_cap_blocks", 0))],
+        "album_cap_violations": [int(album_cap_violations)],
+        "dup_card_id": [int(deck_out["card_id"].duplicated().sum()) if not deck_out.empty else 0],
+        "dup_canonical_id": [int(deck_out["canonical_id"].duplicated().sum()) if not deck_out.empty else 0],
     }
+
     qc_path = REPORTS_DIR / f"deck_qc_{expansion}.csv"
     pd.DataFrame(qc).to_csv(qc_path, index=False, encoding="utf-8")
 
-    missing_spotify = deck_out[deck_out.get("missing_spotify_url", 0) == 1][
-        ["canonical_id", "title_display", "artists_display", "owners"]
-    ] if "missing_spotify_url" in deck_out.columns else pd.DataFrame(columns=["canonical_id","title_display","artists_display","owners"])
-    missing_spotify_path = REPORTS_DIR / f"deck_missing_spotify_{expansion}.csv"
-    missing_spotify.to_csv(missing_spotify_path, index=False, encoding="utf-8")
+    meta = {
+        "expansion": expansion,
+        "limit": int(args.limit),
+        "selected": int(len(deck_out)),
+        "owners_universe": owners_universe,
+        "manual_year_alpha": float(args.manual_year_alpha),
+        "manual_year_rounding": str(args.manual_year_rounding),
+        "manual_year_k": int(manual_k),
+        "manual_year_queue_size": int(len(manual_queue)),
+        "year_confidence_min": float(args.year_confidence_min),
+        "max_per_album": int(args.max_per_album),
+        "album_cap_blocks": int(selection_stats.get("album_cap_blocks", 0)),
+        "album_cap_violations": int(album_cap_violations),
+    }
+    (reports_prefix / "deck_selection_meta.json").write_text(
+        json.dumps(meta, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
 
+    if len(manual_queue) > 0:
+        print(
+            "WARNING: "
+            f"manual year queue has {len(manual_queue)} rows "
+            f"(k={manual_k}, owners_universe={len(owners_universe)})."
+        )
+
+    print(f"OK manual queue -> {manual_queue_path}")
+    print(f"OK collapse report -> {REPORTS_DIR / f'collapse_{expansion}.csv'}")
     print(f"OK deck -> {out_csv}")
     print(f"OK deck json -> {out_json}")
     print(f"OK qc -> {qc_path}")
-    print(f"OK missing spotify -> {missing_spotify_path}")
-    if limit > 0:
-        print(f"OK selection reports -> {reports_prefix}")
+    print(f"OK reports -> {reports_prefix}")
 
 
 if __name__ == "__main__":
