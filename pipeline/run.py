@@ -33,7 +33,8 @@ PIPELINE_ALL_CORE: List[str] = [
     "deck",
 ]
 
-CARDS_STAGES: List[str] = ["cards_preview", "cards_sheets"]
+# cards_preview se mantiene como subcomando explícito, pero no se ejecuta por defecto en all --with-cards.
+CARDS_STAGES: List[str] = ["cards_sheets"]
 EXPANSION_AWARE = {"instances", "canonicalize", "years", "deck"}
 
 
@@ -412,7 +413,7 @@ def build_parser() -> argparse.ArgumentParser:
     all_parser.add_argument(
         "--with-cards",
         action="store_true",
-        help="Also run cards_preview and cards_sheets if scripts exist.",
+        help="Also run cards_sheets if script exists (cards_preview is explicit only).",
     )
 
     return parser
