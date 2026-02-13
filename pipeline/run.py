@@ -331,8 +331,21 @@ def run_stages(
     return 0
 
 
+def card_stage_args_from_namespace(args: argparse.Namespace) -> List[str]:
+    extra: List[str] = []
+    gradient_mode = getattr(args, "gradient_mode", None)
+    if gradient_mode:
+        extra.extend(["--gradient-mode", str(gradient_mode)])
+    return extra
+
+
 def stage_args_for_single_command(args: argparse.Namespace) -> Dict[str, Sequence[str]]:
     out: Dict[str, Sequence[str]] = {}
+    if args.command == "cards_sheets":
+        card_args = card_stage_args_from_namespace(args)
+        if card_args:
+            out["cards_sheets"] = card_args
+        return out
     if args.command not in {"export", "instances"}:
         return out
 
@@ -354,6 +367,9 @@ def stage_args_for_all_command(args: argparse.Namespace) -> Dict[str, Sequence[s
             out[stage] = ["--owner", str(owner)]
         else:
             out[stage] = ["--all"]
+    card_args = card_stage_args_from_namespace(args)
+    if card_args:
+        out["cards_sheets"] = card_args
     return out
 
 
@@ -403,6 +419,13 @@ def build_parser() -> argparse.ArgumentParser:
                 action="store_true",
                 help="Procesa todos los owners en esta etapa.",
             )
+        if name == "cards_sheets":
+            stage_parser.add_argument(
+                "--gradient-mode",
+                choices=["png", "pil"],
+                default=None,
+                help="Modo de fondo para reverso de cartas (png por defecto en renderer).",
+            )
 
     all_parser = subparsers.add_parser("all", parents=[common], help="Run core stages in order.")
     all_parser.add_argument(
@@ -414,6 +437,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--with-cards",
         action="store_true",
         help="Also run cards_sheets if script exists (cards_preview is explicit only).",
+    )
+    all_parser.add_argument(
+        "--gradient-mode",
+        choices=["png", "pil"],
+        default=None,
+        help="Pasa --gradient-mode a cards_sheets cuando se usa --with-cards.",
     )
 
     return parser
@@ -450,12 +479,14 @@ def main() -> int:
             return rc
         return 0
 
+    all_stage_args = stage_args_for_all_command(args)
+
     rc = run_stages(
         stages=PIPELINE_ALL_CORE,
         expansion=expansion,
         cfg=cfg,
         dry_run=bool(args.dry_run),
-        stage_args=stage_args_for_all_command(args),
+        stage_args=all_stage_args,
     )
     if rc != 0:
         return rc
@@ -478,6 +509,7 @@ def main() -> int:
             expansion=expansion,
             cfg=cfg,
             dry_run=bool(args.dry_run),
+            stage_args=all_stage_args,
         )
         if rc != 0:
             return rc

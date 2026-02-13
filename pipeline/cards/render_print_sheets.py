@@ -31,7 +31,7 @@ import hashlib
 import random
 from io import BytesIO
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 import pandas as pd
 import qrcode
@@ -54,6 +54,9 @@ try:
     _PIL_OK = True
 except Exception:
     _PIL_OK = False
+
+
+BACK_GRADIENTS_DIR = Path("pipeline/cards/assets/back_gradients")
 
 
 # -----------------------------
@@ -367,6 +370,55 @@ NEON_BG_PALETTE = [
 ]
 
 
+def list_back_gradient_pngs(gradient_dir: Path) -> List[Path]:
+    if not gradient_dir.exists():
+        return []
+    return sorted(
+        [p for p in gradient_dir.iterdir() if p.is_file() and p.suffix.lower() == ".png"],
+        key=lambda p: p.name.lower(),
+    )
+
+
+def stable_pick_path(key: str, options: Sequence[Path]) -> Optional[Path]:
+    if not options:
+        return None
+    digest = hashlib.md5(key.encode("utf-8")).hexdigest()
+    idx = int(digest[:8], 16) % len(options)
+    return options[idx]
+
+
+def make_png_bg_reader_cached(
+    cache: Dict[str, ImageReader],
+    png_path: Path,
+    size_px: int = 720,
+) -> ImageReader:
+    cache_key = f"{png_path.resolve()}|{size_px}|pil={int(_PIL_OK)}"
+    if cache_key in cache:
+        return cache[cache_key]
+
+    if _PIL_OK:
+        with Image.open(str(png_path)) as src:
+            im = src.convert("RGB")
+            w, h = im.size
+            if w > 0 and h > 0 and w != h:
+                side = min(w, h)
+                left = (w - side) // 2
+                top = (h - side) // 2
+                im = im.crop((left, top, left + side, top + side))
+            if size_px > 0:
+                im = im.resize((size_px, size_px), Image.LANCZOS)
+
+            buf = BytesIO()
+            im.save(buf, format="PNG")
+            buf.seek(0)
+            reader = ImageReader(buf)
+    else:
+        reader = ImageReader(str(png_path))
+
+    cache[cache_key] = reader
+    return reader
+
+
 def _hex_to_rgb01(hex_color: str) -> Tuple[float, float, float]:
     s = hex_color.strip().lstrip("#")
     if len(s) == 3:
@@ -612,15 +664,40 @@ def draw_back_card(
     expansion_code: str,
     fonts: dict,
     bg_cache: Dict[str, ImageReader],
-) -> None:
-    key = f"{title}|{artists}|{year}|{expansion_code}"
+    png_bg_cache: Dict[str, ImageReader],
+    gradient_mode: str,
+    gradient_pngs: Sequence[Path],
+    selection_key: str,
+) -> str:
+    key = selection_key or f"{title}|{artists}|{year}|{expansion_code}"
     base_hex = stable_palette_pick(key, NEON_BG_PALETTE)
 
-    bg_reader = make_gradient_bg_reader_cached(bg_cache, base_hex, size_px=720)
-    if bg_reader is not None:
-        draw_full_bleed_image(c, bg_reader, x, y, w, h)
+    gradient_label = ""
+    if gradient_mode == "png":
+        chosen_png = stable_pick_path(key, gradient_pngs)
+        if chosen_png is not None:
+            try:
+                png_reader = make_png_bg_reader_cached(png_bg_cache, chosen_png, size_px=720)
+                draw_full_bleed_image(c, png_reader, x, y, w, h)
+                gradient_label = f"PNG({chosen_png.name})"
+            except Exception:
+                gradient_label = "PIL(fallback:png_load_error)"
+        else:
+            gradient_label = "PIL(fallback:no_png)"
+
+    if not gradient_label:
+        gradient_label = "PIL(explicit)"
+
+    if gradient_label.startswith("PIL"):
+        bg_reader = make_gradient_bg_reader_cached(bg_cache, base_hex, size_px=720)
+        if bg_reader is not None:
+            draw_full_bleed_image(c, bg_reader, x, y, w, h)
+        else:
+            draw_gradient_bg_native(c, x, y, w, h, base_hex, seed_key=key)
+            gradient_label = "PIL(native)"
     else:
-        draw_gradient_bg_native(c, x, y, w, h, base_hex, seed_key=key)
+        # Fondo PNG ya pintado.
+        pass
 
     # Texto negro
     c.setFillColor(colors.black)
@@ -678,6 +755,7 @@ def draw_back_card(
         start_size=10,
         min_size=7,
     )
+    return gradient_label
 
 
 # -----------------------------
@@ -742,6 +820,8 @@ def generate_pdf(
     max_sheets: Optional[int],
     qr_transparent: bool,
     qr_underlay_alpha: float,
+    gradient_mode: str,
+    gradient_dir: Path,
 ) -> None:
     out_pdf.parent.mkdir(parents=True, exist_ok=True)
 
@@ -754,6 +834,8 @@ def generate_pdf(
     bg_reader = ImageReader(str(bg_path)) if bg_path.exists() else None
     qr_cache: Dict[str, ImageReader] = {}
     bg_cache: Dict[str, ImageReader] = {}
+    png_bg_cache: Dict[str, ImageReader] = {}
+    gradient_pngs = list_back_gradient_pngs(gradient_dir) if gradient_mode == "png" else []
 
     per_sheet = rows * cols
     sheets = chunk(cards, per_sheet)
@@ -763,10 +845,18 @@ def generate_pdf(
     total_sheets = len(sheets)
     total_pages = total_sheets * 2
 
+    if gradient_mode == "png":
+        if gradient_pngs:
+            gradient_summary = f"PNG(back_gradients:{len(gradient_pngs)})"
+        else:
+            gradient_summary = "PIL(fallback:no_png)"
+    else:
+        gradient_summary = "PIL(explicit)"
+
     print(
         f"[{out_pdf.name}] {total_sheets} sheets -> {total_pages} páginas "
         f"(modo={mode}, grid={rows}x{cols}, qr={qr_mm:.1f}mm, "
-        f"gradient={'PIL' if _PIL_OK else 'native'}, "
+        f"gradient={gradient_summary}, "
         f"qr_transparent={'on' if (qr_transparent and _PIL_OK) else 'off'})",
         flush=True,
     )
@@ -778,6 +868,7 @@ def generate_pdf(
     cut_lw = 0.6
 
     back_idx_map = order_back_indices(rows, cols, mode)
+    gradient_detail_logged = False
 
     for si, sheet_cards in enumerate(sheets, start=1):
         if len(sheet_cards) < per_sheet:
@@ -829,9 +920,16 @@ def generate_pdf(
                 year = card_data.get("year", "")
                 expansion = safe_str(card_data.get("expansion_code") or "I")
                 owners = parse_owners(card_data)
+                canonical_id = safe_str(
+                    card_data.get("canonical_id")
+                    or card_data.get("canonical_song_id")
+                    or card_data.get("song_id")
+                    or card_data.get("track_id")
+                )
+                gradient_key = canonical_id or f"{title}|{artists}|{safe_str(year)}|{expansion}"
 
                 if title or artists or safe_str(year):
-                    draw_back_card(
+                    gradient_label = draw_back_card(
                         c,
                         cx,
                         cy,
@@ -844,7 +942,14 @@ def generate_pdf(
                         expansion_code=expansion,
                         fonts=fonts,
                         bg_cache=bg_cache,
+                        png_bg_cache=png_bg_cache,
+                        gradient_mode=gradient_mode,
+                        gradient_pngs=gradient_pngs,
+                        selection_key=gradient_key,
                     )
+                    if not gradient_detail_logged:
+                        print(f"[{out_pdf.name}] gradient={gradient_label}", flush=True)
+                        gradient_detail_logged = True
                 else:
                     c.setFillColor(colors.white)
                     c.rect(cx, cy, card, card, fill=1, stroke=0)
@@ -867,6 +972,17 @@ def main() -> None:
     ap.add_argument("--card-mm", type=float, default=65.0)
     ap.add_argument("--qr-mm", type=float, default=25.0, help="Tamaño del QR en mm (lado)")
     ap.add_argument("--bg", default="pipeline/cards/assets/back_bg.png")
+    ap.add_argument(
+        "--gradient-mode",
+        choices=["png", "pil"],
+        default="png",
+        help="Fondo del reverso: PNGs en back_gradients (default) o gradiente generado con PIL/native.",
+    )
+    ap.add_argument(
+        "--gradient-dir",
+        default=str(BACK_GRADIENTS_DIR),
+        help="Carpeta con PNGs para --gradient-mode png.",
+    )
     ap.add_argument("--max-sheets", type=int, default=None, help="Test: limita nº de sheets (cada sheet = 2 páginas)")
     ap.add_argument(
         "--only",
@@ -897,6 +1013,8 @@ def main() -> None:
 
     out_dir = Path(args.out_dir)
     bg_path = Path(args.bg)
+    gradient_dir = Path(args.gradient_dir)
+    gradient_mode = safe_str(args.gradient_mode).lower() or "png"
 
     variants = [
         ("4x3_short", 4, 3, "flip-short"),
@@ -927,6 +1045,8 @@ def main() -> None:
             max_sheets=args.max_sheets,
             qr_transparent=args.qr_transparent,
             qr_underlay_alpha=max(0.0, min(1.0, args.qr_underlay_alpha)),
+            gradient_mode=gradient_mode,
+            gradient_dir=gradient_dir,
         )
 
 
