@@ -333,6 +333,9 @@ def run_stages(
 
 def card_stage_args_from_namespace(args: argparse.Namespace) -> List[str]:
     extra: List[str] = []
+    qr_mm = getattr(args, "qr_mm", None)
+    if qr_mm is not None:
+        extra.extend(["--qr-mm", str(qr_mm)])
     gradient_mode = getattr(args, "gradient_mode", None)
     if gradient_mode:
         extra.extend(["--gradient-mode", str(gradient_mode)])
@@ -421,6 +424,12 @@ def build_parser() -> argparse.ArgumentParser:
             )
         if name == "cards_sheets":
             stage_parser.add_argument(
+                "--qr-mm",
+                type=float,
+                default=None,
+                help="Pasa --qr-mm a cards_sheets.",
+            )
+            stage_parser.add_argument(
                 "--gradient-mode",
                 choices=["png", "pil"],
                 default=None,
@@ -437,6 +446,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--with-cards",
         action="store_true",
         help="Also run cards_sheets if script exists (cards_preview is explicit only).",
+    )
+    all_parser.add_argument(
+        "--qr-mm",
+        type=float,
+        default=None,
+        help="Pasa --qr-mm a cards_sheets cuando se usa --with-cards.",
     )
     all_parser.add_argument(
         "--gradient-mode",

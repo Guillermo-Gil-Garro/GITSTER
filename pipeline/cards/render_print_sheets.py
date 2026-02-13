@@ -58,6 +58,14 @@ except Exception:
 
 BACK_GRADIENTS_DIR = Path("pipeline/cards/assets/back_gradients")
 
+# Verificación explícita: el default histórico de CLI era 25.0 mm.
+# En draw_front_card siempre se convierte a puntos con mm_to_pt(qr_mm),
+# así que este valor está ya en milímetros reales.
+QR_MM_CURRENT_CODE_DEFAULT = 25.0
+QR_MM_RULE_TARGET = 25.0
+QR_MM_RULE_TOLERANCE = 0.2
+QR_MM_DEFAULT = 30.0 if abs(QR_MM_CURRENT_CODE_DEFAULT - QR_MM_RULE_TARGET) <= QR_MM_RULE_TOLERANCE else 25.0
+
 
 # -----------------------------
 # Helpers
@@ -970,7 +978,7 @@ def main() -> None:
     ap.add_argument("--deck", default="pipeline/data/processed/deck_I.csv")
     ap.add_argument("--out-dir", default="pipeline/reports")
     ap.add_argument("--card-mm", type=float, default=65.0)
-    ap.add_argument("--qr-mm", type=float, default=25.0, help="Tamaño del QR en mm (lado)")
+    ap.add_argument("--qr-mm", type=float, default=QR_MM_DEFAULT, help="Tamaño del QR en mm (lado)")
     ap.add_argument("--bg", default="pipeline/cards/assets/back_bg.png")
     ap.add_argument(
         "--gradient-mode",
@@ -1015,6 +1023,11 @@ def main() -> None:
     bg_path = Path(args.bg)
     gradient_dir = Path(args.gradient_dir)
     gradient_mode = safe_str(args.gradient_mode).lower() or "png"
+    print(
+        f"[render_print_sheets] qr_current_mm={QR_MM_CURRENT_CODE_DEFAULT:.1f} "
+        f"qr_default_mm={QR_MM_DEFAULT:.1f}",
+        flush=True,
+    )
 
     variants = [
         ("4x3_short", 4, 3, "flip-short"),
