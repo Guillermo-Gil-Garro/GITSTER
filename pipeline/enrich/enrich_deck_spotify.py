@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 import base64
 import json
-import math
 import os
 import re
 import time
@@ -127,7 +126,12 @@ def parse_cache_artists(entry: Any) -> List[Dict[str, str]]:
 
 
 def has_valid_cache_entry(entry: Any) -> bool:
-    return len(parse_cache_artists(entry)) > 0
+    if len(parse_cache_artists(entry)) > 0:
+        return True
+    if isinstance(entry, dict) and str(entry.get("_skip", "")).strip():
+        # Track blocked/unavailable (403/404): avoid repeated requests.
+        return True
+    return False
 
 
 def load_cache(path: Path) -> Dict[str, Dict[str, Any]]:
@@ -202,25 +206,24 @@ class SpotifyAppClient:
         self.expires_at = time.time() + max(60, expires_in)
         return token
 
-    def fetch_tracks_batch(
+    def fetch_track(
         self,
-        track_ids: List[str],
+        track_id: str,
         market: str,
         max_retries: int,
-    ) -> Dict[str, List[Dict[str, str]]]:
-        ids_param = ",".join(track_ids)
+    ) -> Dict[str, Any]:
         refreshed_after_401 = False
         use_market = bool(clean_str(market))
 
         for attempt in range(1, max_retries + 2):
             token = self.get_spotify_app_token(force_refresh=False)
             headers = {"Authorization": f"Bearer {token}"}
-            params: Dict[str, str] = {"ids": ids_param}
+            params: Dict[str, str] = {}
             if use_market:
                 params["market"] = clean_str(market)
 
             resp = self.session.get(
-                "https://api.spotify.com/v1/tracks",
+                f"https://api.spotify.com/v1/tracks/{track_id}",
                 params=params,
                 headers=headers,
                 timeout=self.timeout,
@@ -232,14 +235,22 @@ class SpotifyAppClient:
                 continue
 
             if resp.status_code == 429:
-                retry_after_raw = clean_str(resp.headers.get("Retry-After", "1"))
-                retry_after = int(retry_after_raw) if retry_after_raw.isdigit() else 1
+                retry_after_raw = clean_str(resp.headers.get("Retry-After", ""))
+                if retry_after_raw.isdigit():
+                    retry_after = int(retry_after_raw)
+                else:
+                    retry_after = min(30, 2 ** (attempt - 1))
                 if attempt > max_retries:
-                    raise RuntimeError(
-                        f"429 Retry-After={retry_after}s and retry limit reached (max_retries={max_retries})"
-                    )
+                    return {
+                        "status": "error",
+                        "status_code": 429,
+                        "error": f"rate_limited_retry_exhausted_retry_after={retry_after}",
+                        "artists": [],
+                        "artists_ids": [],
+                        "track_name": "",
+                    }
                 print(
-                    f"[deck_spotify] 429 received, waiting {retry_after}s "
+                    f"[deck_spotify] 429 track_id={track_id} wait={retry_after}s "
                     f"(attempt {attempt}/{max_retries})"
                 )
                 time.sleep(float(retry_after) + 0.1)
@@ -248,42 +259,69 @@ class SpotifyAppClient:
             if resp.status_code in {500, 502, 503, 504} and attempt <= max_retries:
                 backoff = min(20.0, 0.5 * (2 ** (attempt - 1)))
                 print(
-                    f"[deck_spotify] transient status={resp.status_code}, retry in {backoff:.1f}s "
-                    f"(attempt {attempt}/{max_retries})"
+                    f"[deck_spotify] transient status={resp.status_code} track_id={track_id} "
+                    f"retry_in={backoff:.1f}s (attempt {attempt}/{max_retries})"
                 )
                 time.sleep(backoff)
                 continue
 
             if resp.status_code == 403 and use_market:
-                print("[deck_spotify] 403 with market, retrying batch without market parameter")
                 use_market = False
                 continue
 
+            if resp.status_code in {403, 404}:
+                body = clean_str(resp.text)[:300]
+                return {
+                    "status": "skip",
+                    "status_code": int(resp.status_code),
+                    "error": body or f"http_{resp.status_code}",
+                    "artists": [],
+                    "artists_ids": [],
+                    "track_name": "",
+                }
+
             if resp.status_code != 200:
                 body = clean_str(resp.text)[:500]
-                raise RuntimeError(f"Spotify /v1/tracks failed status={resp.status_code} body={body}")
+                return {
+                    "status": "error",
+                    "status_code": int(resp.status_code),
+                    "error": body or f"http_{resp.status_code}",
+                    "artists": [],
+                    "artists_ids": [],
+                    "track_name": "",
+                }
 
             payload = resp.json()
-            tracks = payload.get("tracks") or []
-            out: Dict[str, List[Dict[str, str]]] = {}
-            for track_obj in tracks:
-                if not isinstance(track_obj, dict):
+            track_obj = payload if isinstance(payload, dict) else {}
+            artists: List[Dict[str, str]] = []
+            artist_ids: List[str] = []
+            for artist_obj in track_obj.get("artists") or []:
+                if not isinstance(artist_obj, dict):
                     continue
-                track_id = clean_str(track_obj.get("id"))
-                if not track_id:
-                    continue
-                artists: List[Dict[str, str]] = []
-                for artist_obj in track_obj.get("artists") or []:
-                    if not isinstance(artist_obj, dict):
-                        continue
-                    artist_id = clean_str(artist_obj.get("id"))
-                    artist_name = clean_str(artist_obj.get("name"))
-                    if artist_id or artist_name:
-                        artists.append({"id": artist_id, "name": artist_name})
-                out[track_id] = artists
-            return out
+                artist_id = clean_str(artist_obj.get("id"))
+                artist_name = clean_str(artist_obj.get("name"))
+                if artist_id or artist_name:
+                    artists.append({"id": artist_id, "name": artist_name})
+                if artist_id:
+                    artist_ids.append(artist_id)
 
-        raise RuntimeError("Spotify batch retries exhausted")
+            return {
+                "status": "ok",
+                "status_code": 200,
+                "error": "",
+                "artists": artists,
+                "artists_ids": artist_ids,
+                "track_name": clean_str(track_obj.get("name")),
+            }
+
+        return {
+            "status": "error",
+            "status_code": "",
+            "error": "retry_exhausted",
+            "artists": [],
+            "artists_ids": [],
+            "track_name": "",
+        }
 
 
 def parse_args() -> argparse.Namespace:
@@ -296,10 +334,16 @@ def parse_args() -> argparse.Namespace:
         default=str(CACHE_DIR / "spotify_tracks_cache.json"),
         help="JSON cache path.",
     )
-    ap.add_argument("--spotify-max-requests", type=int, default=20, help="Budget max requests (batches of 50).")
+    ap.add_argument("--spotify-max-requests", type=int, default=20, help="Budget max requests reales a Spotify.")
     ap.add_argument("--market", default="ES")
-    ap.add_argument("--throttle", type=float, default=0.2, help="Extra sleep between batch requests.")
-    ap.add_argument("--max-retries", type=int, default=5, help="Retries per batch for 429/5xx.")
+    ap.add_argument(
+        "--spotify-throttle-seconds",
+        type=float,
+        default=0.2,
+        help="Sleep entre requests reales a Spotify.",
+    )
+    ap.add_argument("--throttle", type=float, default=None, help=argparse.SUPPRESS)
+    ap.add_argument("--max-retries", type=int, default=5, help="Retries per track for 429/5xx.")
     return ap.parse_args()
 
 
@@ -348,18 +392,23 @@ def main() -> None:
         else:
             missing_ids.append(track_id)
 
-    num_batches = int(math.ceil(len(missing_ids) / 50.0)) if missing_ids else 0
-    budget = int(args.spotify_max_requests)
+    budget = max(0, int(args.spotify_max_requests))
+    throttle = float(args.spotify_throttle_seconds)
+    if args.throttle is not None:
+        throttle = float(args.throttle)
+    throttle = max(0.0, throttle)
+    requests_needed = len(missing_ids)
 
     print(f"[deck_spotify] unique_track_ids={len(unique_track_ids)}")
     print(f"[deck_spotify] cache_hits={cache_hits}")
     print(f"[deck_spotify] missing_ids={len(missing_ids)}")
-    print(f"[deck_spotify] batches_needed={num_batches} budget={budget}")
+    print(f"[deck_spotify] requests_needed={requests_needed} budget={budget}")
+    print(f"[deck_spotify] throttle_seconds={throttle}")
 
-    if num_batches > budget:
+    if requests_needed > budget:
         raise SystemExit(
             "[deck_spotify] abort: Spotify request budget exceeded "
-            f"(needed={num_batches}, budget={budget}). "
+            f"(needed={requests_needed}, budget={budget}). "
             "Increase with --spotify-max-requests."
         )
 
@@ -371,47 +420,76 @@ def main() -> None:
             raise SystemExit("Missing SPOTIFY_CLIENT_ID or SPOTIFY_CLIENT_SECRET in environment/.env")
 
         client = SpotifyAppClient(client_id=client_id, client_secret=client_secret)
-        for batch_idx in range(0, len(missing_ids), 50):
-            batch = missing_ids[batch_idx : batch_idx + 50]
-            batch_no = (batch_idx // 50) + 1
+        real_requests = 0
+        for idx, track_id in enumerate(missing_ids, start=1):
+            if real_requests >= budget:
+                print(
+                    f"[deck_spotify] budget reached ({real_requests}/{budget}); "
+                    "stopping remaining fetches."
+                )
+                break
             fetched_at = datetime.now().isoformat(timespec="seconds")
             try:
-                artists_map = client.fetch_tracks_batch(
-                    track_ids=batch,
+                result = client.fetch_track(
+                    track_id=track_id,
                     market=clean_str(args.market) or "ES",
                     max_retries=max(0, int(args.max_retries)),
                 )
             except Exception as exc:
                 err = clean_str(exc)
-                print(f"[deck_spotify] warning: batch {batch_no}/{num_batches} failed: {err}")
-                for track_id in batch:
-                    entry = cache.get(track_id, {}) if isinstance(cache.get(track_id), dict) else {}
-                    if not isinstance(entry, dict):
-                        entry = {}
-                    entry["_error"] = err[:300]
-                    entry["fetched_at"] = fetched_at
-                    entry["source"] = "v1/tracks_batch"
-                    cache[track_id] = entry
-                save_cache(cache_path, cache)
-                if float(args.throttle) > 0:
-                    time.sleep(float(args.throttle))
-                continue
-
-            for track_id in batch:
-                artists = artists_map.get(track_id, [])
+                print(f"[deck_spotify] warning: request failed for {track_id}: {err}")
                 entry = cache.get(track_id, {}) if isinstance(cache.get(track_id), dict) else {}
                 if not isinstance(entry, dict):
                     entry = {}
-                entry["artists"] = artists
+                entry["_error"] = err[:300]
                 entry["fetched_at"] = fetched_at
-                entry["source"] = "v1/tracks_batch"
+                entry["source"] = "v1/tracks_single"
                 cache[track_id] = entry
-                cached_track_artists[track_id] = artists
+                save_cache(cache_path, cache)
+                real_requests += 1
+                if throttle > 0:
+                    time.sleep(throttle)
+                continue
 
+            entry = cache.get(track_id, {}) if isinstance(cache.get(track_id), dict) else {}
+            if not isinstance(entry, dict):
+                entry = {}
+            status = clean_str(result.get("status"))
+            artists = result.get("artists") if isinstance(result, dict) else []
+            if not isinstance(artists, list):
+                artists = []
+            artists_ids = result.get("artists_ids") if isinstance(result, dict) else []
+            if not isinstance(artists_ids, list):
+                artists_ids = []
+
+            entry["artists"] = artists
+            entry["artists_ids"] = [clean_str(x) for x in artists_ids if clean_str(x)]
+            entry["track_name"] = clean_str(result.get("track_name")) if isinstance(result, dict) else ""
+            entry["status_code"] = result.get("status_code")
+            entry["fetched_at"] = fetched_at
+            entry["source"] = "v1/tracks_single"
+            entry["_error"] = clean_str(result.get("error")) if isinstance(result, dict) else ""
+            if status == "skip":
+                entry["_skip"] = f"status_{entry.get('status_code')}"
+                print(
+                    f"[deck_spotify] warning: skipping track_id={track_id} "
+                    f"status={entry.get('status_code')} ({entry.get('_skip')})"
+                )
+            else:
+                entry["_skip"] = ""
+            cache[track_id] = entry
+            cached_track_artists[track_id] = parse_cache_artists(entry)
             save_cache(cache_path, cache)
-            print(f"[deck_spotify] fetched batch {batch_no}/{num_batches}")
-            if float(args.throttle) > 0:
-                time.sleep(float(args.throttle))
+            real_requests += 1
+            if status == "ok":
+                print(f"[deck_spotify] fetched {idx}/{len(missing_ids)} track_id={track_id}")
+            elif status == "error":
+                print(
+                    f"[deck_spotify] warning: track fetch error track_id={track_id} "
+                    f"status={entry.get('status_code')} error={entry.get('_error')[:160]}"
+                )
+            if throttle > 0:
+                time.sleep(throttle)
 
     updated_records: List[Dict[str, Any]] = []
     for row, track_id in zip(df.to_dict(orient="records"), row_track_ids):

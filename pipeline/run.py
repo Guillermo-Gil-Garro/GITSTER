@@ -351,6 +351,9 @@ def deck_spotify_stage_args_from_namespace(args: argparse.Namespace) -> List[str
     spotify_max_requests = getattr(args, "spotify_max_requests", None)
     if spotify_max_requests is not None:
         extra.extend(["--spotify-max-requests", str(spotify_max_requests)])
+    spotify_throttle_seconds = getattr(args, "spotify_throttle_seconds", None)
+    if spotify_throttle_seconds is not None:
+        extra.extend(["--spotify-throttle-seconds", str(spotify_throttle_seconds)])
     return extra
 
 
@@ -462,7 +465,13 @@ def build_parser() -> argparse.ArgumentParser:
                 "--spotify-max-requests",
                 type=int,
                 default=None,
-                help="Budget máximo de requests Spotify (batches de 50).",
+                help="Budget máximo de requests reales a Spotify.",
+            )
+            stage_parser.add_argument(
+                "--spotify-throttle-seconds",
+                type=float,
+                default=None,
+                help="Pasa --spotify-throttle-seconds a deck_spotify.",
             )
 
     all_parser = subparsers.add_parser("all", parents=[common], help="Run core stages in order.")
@@ -493,6 +502,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=None,
         help="Pasa --spotify-max-requests a deck_spotify cuando se usa --with-cards.",
+    )
+    all_parser.add_argument(
+        "--spotify-throttle-seconds",
+        type=float,
+        default=None,
+        help="Pasa --spotify-throttle-seconds a deck_spotify cuando se usa --with-cards.",
     )
 
     return parser

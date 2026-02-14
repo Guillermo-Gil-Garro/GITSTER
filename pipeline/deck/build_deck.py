@@ -49,6 +49,7 @@ TITLE_STOPWORDS = {
     "and",
     "as",
     "at",
+    "but",
     "by",
     "con",
     "da",
@@ -62,27 +63,40 @@ TITLE_STOPWORDS = {
     "el",
     "en",
     "for",
+    "from",
     "in",
     "la",
     "las",
     "los",
+    "nor",
     "of",
     "on",
+    "per",
     "or",
     "para",
     "por",
+    "so",
+    "sin",
     "the",
     "to",
     "u",
+    "up",
     "un",
     "una",
     "unos",
     "unas",
+    "via",
+    "vs",
+    "yet",
     "y",
+    "o",
+    "no",
+    "lo",
 }
 
 WORD_TOKEN_RE = re.compile(r"[A-Za-zÀ-ÖØ-öø-ÿ0-9]+(?:'[A-Za-zÀ-ÖØ-öø-ÿ0-9]+)?")
 DASH_WITH_SPACES_RE = re.compile(r"\s+[–—-]\s+")
+LETTER_RE = re.compile(r"[A-Za-zÀ-ÖØ-öø-ÿ]")
 
 ACRONYM_KEEP = {
     "DJ",
@@ -201,8 +215,27 @@ def normalize_quotes_and_spaces(text: str) -> str:
 def normalize_dash_separator(text: str) -> str:
     out = str(text or "")
     out = DASH_WITH_SPACES_RE.sub(" - ", out)
+    out = re.sub(r"\s+[–—-]\s*", " - ", out)
+    out = re.sub(r"\s*[–—-]\s+", " - ", out)
     out = SPACE_RE.sub(" ", out).strip()
     return out
+
+
+def count_letters(text: str) -> int:
+    return len(LETTER_RE.findall(str(text or "")))
+
+
+def is_all_caps_title(text: str) -> bool:
+    letters = [ch for ch in str(text or "") if ch.isalpha()]
+    if not letters:
+        return False
+    return all(ch.isupper() for ch in letters)
+
+
+def collect_stopwords_used(text: str) -> str:
+    words = [match.group(0).lower() for match in WORD_TOKEN_RE.finditer(str(text or ""))]
+    used = sorted({word for word in words if word in TITLE_STOPWORDS})
+    return ",".join(used)
 
 
 def mostly_upper_or_lower(text: str) -> bool:
@@ -226,7 +259,7 @@ def is_roman_or_acronym_token(token: str) -> bool:
         return True
     if core.upper() in ACRONYM_KEEP:
         return True
-    if core.isalpha() and core.isupper() and 2 <= len(core) <= 5:
+    if core.isalpha() and core.isupper() and 2 <= len(core) <= 3 and core.lower() not in TITLE_STOPWORDS:
         return True
     return False
 
@@ -295,17 +328,38 @@ def smart_title_case(text: str) -> str:
     return apply_word_transform(text, title_case_core_token)
 
 
-def clean_title_display(title: str) -> str:
+def normalize_title_display_with_meta(title: str) -> Tuple[str, str, int, str]:
     text = normalize_quotes_and_spaces(str(title or ""))
     text = normalize_dash_separator(text)
+    rule_applied: List[str] = []
     if " - " in text:
         text = text.split(" - ", 1)[0].strip()
-    if mostly_upper_or_lower(text):
+        rule_applied.append("drop_suffix_after_dash")
+
+    letters_count = count_letters(text)
+    if is_all_caps_title(text) and letters_count <= 3:
+        # Caso corto en mayúsculas: mantener literal (USA, T K T, etc.).
+        text = SPACE_RE.sub(" ", text).strip()
+        rule_applied.append("keep_all_caps_short")
+    elif is_all_caps_title(text):
         text = smart_title_case(text)
+        rule_applied.append("title_case_all_caps")
+    elif mostly_upper_or_lower(text):
+        text = smart_title_case(text)
+        rule_applied.append("title_case_mostly_single_case")
     else:
         text = apply_stopword_lowering_only(text)
+        rule_applied.append("stopwords_lowering")
+
     text = SPACE_RE.sub(" ", text).strip()
-    return text
+    stopwords_used = collect_stopwords_used(text)
+    applied = "|".join(rule_applied) if rule_applied else "none"
+    return text, applied, int(letters_count), stopwords_used
+
+
+def clean_title_display(title: str) -> str:
+    normalized, _, _, _ = normalize_title_display_with_meta(title)
+    return normalized
 
 
 def split_artists_text(text: str) -> List[str]:
@@ -659,7 +713,11 @@ def build_candidates(
         out.at[idx, "artists_count"] = inferred
 
     out["title_original"] = out["title_canon"].astype(str).str.strip()
-    out["title_display"] = out["title_original"].astype(str).apply(clean_title_display)
+    title_meta = out["title_original"].astype(str).apply(normalize_title_display_with_meta)
+    out["title_display"] = title_meta.apply(lambda x: x[0] if isinstance(x, tuple) and len(x) >= 1 else "")
+    out["title_rule_applied"] = title_meta.apply(lambda x: x[1] if isinstance(x, tuple) and len(x) >= 2 else "")
+    out["title_letters_count"] = title_meta.apply(lambda x: int(x[2]) if isinstance(x, tuple) and len(x) >= 3 else 0)
+    out["title_stopwords_used"] = title_meta.apply(lambda x: x[3] if isinstance(x, tuple) and len(x) >= 4 else "")
 
     def _artists_display_from_row(row: pd.Series) -> str:
         artists_from_json = artists_from_full_json(row.get("artists_full_json", ""))
@@ -684,6 +742,9 @@ def build_candidates(
             artists_override = str(override.get("artists_display", "")).strip()
             if title_override:
                 out.loc[mask, "title_display"] = title_override
+                out.loc[mask, "title_rule_applied"] = "manual_override"
+                out.loc[mask, "title_letters_count"] = out.loc[mask, "title_display"].astype(str).apply(count_letters)
+                out.loc[mask, "title_stopwords_used"] = out.loc[mask, "title_display"].astype(str).apply(collect_stopwords_used)
             if artists_override:
                 out.loc[mask, "artists_display"] = artists_override
     out["has_spotify_url"] = out["spotify_url"].astype(str).str.strip().ne("").astype(int)
@@ -937,7 +998,16 @@ def write_title_normalization_sample(candidates: pd.DataFrame, expansion: str) -
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
     if candidates.empty:
-        pd.DataFrame(columns=["canonical_id", "title_original", "title_display"]).to_csv(
+        pd.DataFrame(
+            columns=[
+                "canonical_id",
+                "original_title",
+                "normalized_title",
+                "rule_applied",
+                "letters_count",
+                "stopwords_used",
+            ]
+        ).to_csv(
             sample_path,
             index=False,
             encoding="utf-8",
@@ -950,11 +1020,38 @@ def write_title_normalization_sample(candidates: pd.DataFrame, expansion: str) -
             candidates["title_original"] = candidates["title_canon"].astype(str)
         else:
             candidates["title_original"] = ""
+    for col, default in [
+        ("title_display", ""),
+        ("title_rule_applied", ""),
+        ("title_letters_count", 0),
+        ("title_stopwords_used", ""),
+    ]:
+        if col not in candidates.columns:
+            candidates[col] = default
 
     diffs = candidates[
         candidates["title_original"].astype(str).str.strip()
         != candidates["title_display"].astype(str).str.strip()
-    ][["canonical_id", "title_original", "title_display"]].copy()
+    ][
+        [
+            "canonical_id",
+            "title_original",
+            "title_display",
+            "title_rule_applied",
+            "title_letters_count",
+            "title_stopwords_used",
+        ]
+    ].copy()
+
+    diffs = diffs.rename(
+        columns={
+            "title_original": "original_title",
+            "title_display": "normalized_title",
+            "title_rule_applied": "rule_applied",
+            "title_letters_count": "letters_count",
+            "title_stopwords_used": "stopwords_used",
+        }
+    )
 
     diffs = diffs.sort_values("canonical_id").head(50)
     diffs.to_csv(sample_path, index=False, encoding="utf-8")
