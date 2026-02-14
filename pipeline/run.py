@@ -22,6 +22,7 @@ SCRIPT_PATHS: Dict[str, Path] = {
     "spotify_tracks": ROOT / "pipeline" / "enrich" / "enrich_spotify_tracks.py",
     "years": ROOT / "pipeline" / "enrich" / "enrich_years.py",
     "deck": ROOT / "pipeline" / "deck" / "build_deck.py",
+    "deck_spotify": ROOT / "pipeline" / "enrich" / "enrich_deck_spotify.py",
     "cards_preview": ROOT / "pipeline" / "cards" / "render_card_preview.py",
     "cards_sheets": ROOT / "pipeline" / "cards" / "render_print_sheets.py",
 }
@@ -37,7 +38,8 @@ PIPELINE_ALL_CORE: List[str] = [
 
 # cards_preview se mantiene como subcomando explícito, pero no se ejecuta por defecto en all --with-cards.
 CARDS_STAGES: List[str] = ["cards_sheets"]
-EXPANSION_AWARE = {"instances", "canonicalize", "spotify_tracks", "years", "deck"}
+WITH_CARDS_STAGES: List[str] = ["deck_spotify"] + CARDS_STAGES
+EXPANSION_AWARE = {"instances", "canonicalize", "spotify_tracks", "years", "deck", "deck_spotify"}
 
 
 def split_passthrough(argv: Sequence[str]) -> Tuple[List[str], List[str]]:
@@ -344,8 +346,21 @@ def card_stage_args_from_namespace(args: argparse.Namespace) -> List[str]:
     return extra
 
 
+def deck_spotify_stage_args_from_namespace(args: argparse.Namespace) -> List[str]:
+    extra: List[str] = []
+    spotify_max_requests = getattr(args, "spotify_max_requests", None)
+    if spotify_max_requests is not None:
+        extra.extend(["--spotify-max-requests", str(spotify_max_requests)])
+    return extra
+
+
 def stage_args_for_single_command(args: argparse.Namespace) -> Dict[str, Sequence[str]]:
     out: Dict[str, Sequence[str]] = {}
+    if args.command == "deck_spotify":
+        ds_args = deck_spotify_stage_args_from_namespace(args)
+        if ds_args:
+            out["deck_spotify"] = ds_args
+        return out
     if args.command == "cards_sheets":
         card_args = card_stage_args_from_namespace(args)
         if card_args:
@@ -372,6 +387,9 @@ def stage_args_for_all_command(args: argparse.Namespace) -> Dict[str, Sequence[s
             out[stage] = ["--owner", str(owner)]
         else:
             out[stage] = ["--all"]
+    deck_spotify_args = deck_spotify_stage_args_from_namespace(args)
+    if deck_spotify_args:
+        out["deck_spotify"] = deck_spotify_args
     card_args = card_stage_args_from_namespace(args)
     if card_args:
         out["cards_sheets"] = card_args
@@ -406,6 +424,7 @@ def build_parser() -> argparse.ArgumentParser:
         "spotify_tracks": "Enrich canonical songs with Spotify tracks data.",
         "years": "Enrich canonical songs with year metadata.",
         "deck": "Build deck CSV/JSON.",
+        "deck_spotify": "Enrich final deck with Spotify artists_all/artists_display.",
         "cards_preview": "Render one card preview PDF.",
         "cards_sheets": "Render print sheets PDFs.",
     }
@@ -438,6 +457,13 @@ def build_parser() -> argparse.ArgumentParser:
                 default=None,
                 help="Modo de fondo para reverso de cartas (png por defecto en renderer).",
             )
+        if name == "deck_spotify":
+            stage_parser.add_argument(
+                "--spotify-max-requests",
+                type=int,
+                default=None,
+                help="Budget máximo de requests Spotify (batches de 50).",
+            )
 
     all_parser = subparsers.add_parser("all", parents=[common], help="Run core stages in order.")
     all_parser.add_argument(
@@ -448,7 +474,7 @@ def build_parser() -> argparse.ArgumentParser:
     all_parser.add_argument(
         "--with-cards",
         action="store_true",
-        help="Also run cards_sheets if script exists (cards_preview is explicit only).",
+        help="Also run deck_spotify + cards_sheets if scripts exist (cards_preview is explicit only).",
     )
     all_parser.add_argument(
         "--qr-mm",
@@ -461,6 +487,12 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["png", "pil"],
         default=None,
         help="Pasa --gradient-mode a cards_sheets cuando se usa --with-cards.",
+    )
+    all_parser.add_argument(
+        "--spotify-max-requests",
+        type=int,
+        default=None,
+        help="Pasa --spotify-max-requests a deck_spotify cuando se usa --with-cards.",
     )
 
     return parser
@@ -521,7 +553,7 @@ def main() -> int:
             return 2
 
     if bool(getattr(args, "with_cards", False)):
-        card_stages = [stage for stage in CARDS_STAGES if SCRIPT_PATHS[stage].exists()]
+        card_stages = [stage for stage in WITH_CARDS_STAGES if SCRIPT_PATHS[stage].exists()]
         rc = run_stages(
             stages=card_stages,
             expansion=expansion,
