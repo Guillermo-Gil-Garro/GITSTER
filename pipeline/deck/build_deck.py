@@ -2,7 +2,7 @@ import argparse
 import json
 import math
 import re
-from collections import defaultdict
+from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
@@ -322,6 +322,17 @@ def split_artists_text(text: str) -> List[str]:
         if v not in vals:
             vals.append(v)
     return vals
+
+
+def parse_artists_canon(value: object) -> List[str]:
+    text = str(value or "").strip()
+    if not text or text.lower() == "nan":
+        return []
+
+    # Para diversidad de artistas, solo admitimos separadores explícitos de lista.
+    norm = text.replace(" | ", "|").replace(";", "|")
+    parts = [part.strip() for part in norm.split("|")]
+    return [part for part in parts if part]
 
 
 def artists_from_full_json(raw: object) -> List[str]:
@@ -816,9 +827,9 @@ def select_deck(
         year_groups[int(year_value)] = group.to_dict(orient="records")
 
     years_sorted = sorted(year_groups.keys())
-    pointers: Dict[int, int] = {year: 0 for year in years_sorted}
     year_counts: Dict[int, int] = defaultdict(int)
     album_counts: Dict[str, int] = defaultdict(int)
+    artist_counts: Counter[str] = Counter()
 
     selected_rows: List[dict] = []
     selected_ids: set[str] = set()
@@ -832,33 +843,47 @@ def select_deck(
         album_key = str(row.get("album_key", "")).strip() or f"cid::{row.get('canonical_id', '')}"
         return album_counts[album_key] < max_per_album
 
-    def advance(year: int) -> bool:
+    def rarity_score(row: dict) -> int:
+        artists_list = parse_artists_canon(row.get("artists_canon", ""))
+        if not artists_list:
+            return 10**9
+        return min(artist_counts.get(artist, 0) for artist in artists_list)
+
+    def candidate_rank(row: dict) -> Tuple[int, int, int, int, str]:
+        return (
+            -int(row.get("owners_count", 0)),
+            int(rarity_score(row)),
+            -int(row.get("instances_count", 0)),
+            -int(row.get("has_spotify_url", 0)),
+            str(row.get("canonical_id", "")),
+        )
+
+    def prune_unavailable_rows(year: int) -> None:
         rows = year_groups[year]
-        idx = pointers[year]
-        while idx < len(rows):
-            row = rows[idx]
+        keep: List[dict] = []
+        for row in rows:
             cid = str(row.get("canonical_id", ""))
             if cid in selected_ids:
-                idx += 1
                 continue
             if max_per_album > 0:
                 album_key = str(row.get("album_key", "")).strip() or f"cid::{cid}"
                 if album_counts[album_key] >= max_per_album:
                     stats["album_cap_blocks"] += 1
-                    idx += 1
                     continue
-            break
-        pointers[year] = idx
-        return idx < len(rows)
+            keep.append(row)
+        year_groups[year] = keep
+
+    def has_candidate(year: int) -> bool:
+        prune_unavailable_rows(year)
+        return len(year_groups[year]) > 0
 
     def pop_next(year: int) -> Optional[dict]:
-        if not advance(year):
-            return None
+        prune_unavailable_rows(year)
         rows = year_groups[year]
-        idx = pointers[year]
-        row = rows[idx]
-        pointers[year] = idx + 1
-        return row
+        if not rows:
+            return None
+        best_idx = min(range(len(rows)), key=lambda idx: candidate_rank(rows[idx]))
+        return rows.pop(best_idx)
 
     def add_row(row: dict, phase: str) -> None:
         cid = str(row.get("canonical_id", ""))
@@ -875,7 +900,12 @@ def select_deck(
         if max_per_album > 0:
             album_counts[album_key] += 1
 
+        row_rarity = rarity_score(row)
+        for artist in parse_artists_canon(row.get("artists_canon", "")):
+            artist_counts[artist] += 1
+
         out = dict(row)
+        out["_artist_rarity_score"] = int(row_rarity)
         out["_selection_phase"] = phase
         out["_selection_order"] = len(selected_rows) + 1
         selected_rows.append(out)
@@ -888,7 +918,7 @@ def select_deck(
             add_row(row, phase="coverage")
 
     while len(selected_rows) < target_limit:
-        active_years = [year for year in years_sorted if advance(year)]
+        active_years = [year for year in years_sorted if has_candidate(year)]
         if not active_years:
             break
 
@@ -959,6 +989,16 @@ def write_deck_reports(
 
     if not deck_out.empty:
         deck_out.to_csv(reports_prefix / "deck_selection.csv", index=False, encoding="utf-8")
+
+
+def compute_top_artists(deck_out: pd.DataFrame, top_n: int = 10) -> List[Tuple[str, int]]:
+    counts: Counter[str] = Counter()
+    if deck_out.empty or "artists_canon" not in deck_out.columns:
+        return []
+    for raw in deck_out["artists_canon"].astype(str).tolist():
+        for artist in parse_artists_canon(raw):
+            counts[artist] += 1
+    return counts.most_common(max(0, int(top_n)))
 
 
 def main() -> None:
@@ -1059,6 +1099,8 @@ def main() -> None:
     else:
         deck_out["year"] = pd.Series(dtype=int)
 
+    deck_out_full = deck_out.copy()
+
     keep_cols = [
         "card_id",
         "expansion_code",
@@ -1156,6 +1198,12 @@ def main() -> None:
             f"manual year queue has {len(manual_queue)} rows "
             f"(k={manual_k}, owners_universe={len(owners_universe)})."
         )
+
+    top_artists = compute_top_artists(deck_out_full, top_n=10)
+    if top_artists:
+        print("[deck] top_artists_canon_in_deck:")
+        for artist, count in top_artists:
+            print(f"[deck]   {artist}: {count}")
 
     print(f"OK manual queue -> {manual_queue_path}")
     print(f"OK collapse report -> {REPORTS_DIR / f'collapse_{expansion}.csv'}")
