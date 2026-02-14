@@ -343,6 +343,26 @@ def card_stage_args_from_namespace(args: argparse.Namespace) -> List[str]:
     gradient_mode = getattr(args, "gradient_mode", None)
     if gradient_mode:
         extra.extend(["--gradient-mode", str(gradient_mode)])
+
+    cards_grid = str(getattr(args, "cards_grid", "all") or "all").strip().lower()
+    cards_mode = str(getattr(args, "cards_mode", "all") or "all").strip().lower()
+
+    if cards_grid != "all" or cards_mode != "all":
+        variants = [
+            ("4x3", "short", "4x3_short"),
+            ("4x3", "long", "4x3_long"),
+            ("3x3", "short", "3x3_short"),
+            ("3x3", "long", "3x3_long"),
+            ("4x3", "match", "4x3_match"),
+            ("3x3", "match", "3x3_match"),
+        ]
+        only = [
+            name
+            for grid, mode, name in variants
+            if (cards_grid == "all" or cards_grid == grid) and (cards_mode == "all" or cards_mode == mode)
+        ]
+        if only:
+            extra.extend(["--only", ",".join(only)])
     return extra
 
 
@@ -460,6 +480,18 @@ def build_parser() -> argparse.ArgumentParser:
                 default=None,
                 help="Modo de fondo para reverso de cartas (png por defecto en renderer).",
             )
+            stage_parser.add_argument(
+                "--cards-grid",
+                choices=["3x3", "4x3", "all"],
+                default="all",
+                help="Filtra PDFs por grid. Default: all.",
+            )
+            stage_parser.add_argument(
+                "--cards-mode",
+                choices=["short", "long", "match", "all"],
+                default="all",
+                help="Filtra PDFs por modo. Default: all.",
+            )
         if name == "deck_spotify":
             stage_parser.add_argument(
                 "--spotify-max-requests",
@@ -496,6 +528,18 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["png", "pil"],
         default=None,
         help="Pasa --gradient-mode a cards_sheets cuando se usa --with-cards.",
+    )
+    all_parser.add_argument(
+        "--cards-grid",
+        choices=["3x3", "4x3", "all"],
+        default="all",
+        help="Filtra PDFs de cards_sheets por grid cuando se usa --with-cards.",
+    )
+    all_parser.add_argument(
+        "--cards-mode",
+        choices=["short", "long", "match", "all"],
+        default="all",
+        help="Filtra PDFs de cards_sheets por modo cuando se usa --with-cards.",
     )
     all_parser.add_argument(
         "--spotify-max-requests",
