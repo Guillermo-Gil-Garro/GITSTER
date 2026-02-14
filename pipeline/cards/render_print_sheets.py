@@ -27,8 +27,10 @@ PRINT SHEETS (A4)
 from __future__ import annotations
 
 import argparse
+import json
 import hashlib
 import random
+import re
 from io import BytesIO
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
@@ -76,6 +78,80 @@ def mm_to_pt(x_mm: float) -> float:
 
 def safe_str(x) -> str:
     return str(x if x is not None else "").strip()
+
+
+def dedupe_preserve_order(values: Sequence[str]) -> List[str]:
+    out: List[str] = []
+    seen = set()
+    for raw in values:
+        item = safe_str(raw)
+        if not item:
+            continue
+        key = item.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(item)
+    return out
+
+
+def parse_artists_list(row: dict) -> List[str]:
+    raw_all = safe_str(row.get("artists_all"))
+    if raw_all:
+        if raw_all.startswith("["):
+            try:
+                payload = json.loads(raw_all)
+            except Exception:
+                payload = None
+            if isinstance(payload, list):
+                names: List[str] = []
+                for item in payload:
+                    if isinstance(item, dict):
+                        names.append(safe_str(item.get("name")))
+                    else:
+                        names.append(safe_str(item))
+                parsed = dedupe_preserve_order(names)
+                if parsed:
+                    return parsed
+
+        if "|" in raw_all or ";" in raw_all:
+            parsed = dedupe_preserve_order(re.split(r"[|;]", raw_all))
+            if parsed:
+                return parsed
+
+        if ", " in raw_all:
+            parsed = dedupe_preserve_order(raw_all.split(", "))
+            if parsed:
+                return parsed
+
+        if "," in raw_all:
+            parsed = dedupe_preserve_order(raw_all.split(","))
+            if parsed:
+                return parsed
+
+        return dedupe_preserve_order([raw_all])
+
+    for key in ("artists_display", "artists_canon"):
+        raw = safe_str(row.get(key))
+        if not raw:
+            continue
+        if "|" in raw or ";" in raw:
+            parsed = dedupe_preserve_order(re.split(r"[|;]", raw))
+            if parsed:
+                return parsed
+        if ", " in raw:
+            parsed = dedupe_preserve_order(raw.split(", "))
+            if parsed:
+                return parsed
+        if "," in raw:
+            parsed = dedupe_preserve_order(raw.split(","))
+            if parsed:
+                return parsed
+        parsed = dedupe_preserve_order([raw])
+        if parsed:
+            return parsed
+
+    return []
 
 
 def normalize_year(y) -> str:
@@ -285,6 +361,200 @@ def fit_single_line_centered(
     out = (trimmed + "…") if trimmed else "…"
     c.drawCentredString(x_center, y, out)
     return min_size
+
+
+def trim_to_width(text: str, max_width: float, font_measure) -> str:
+    raw = safe_str(text)
+    if not raw:
+        return ""
+    if font_measure(raw) <= max_width:
+        return raw
+    out = raw
+    while out and font_measure(out + "…") > max_width:
+        out = out[:-1].rstrip()
+    return (out + "…") if out else "…"
+
+
+def split_artist_name_with_guardrails(artist: str, max_width: float, font_measure) -> Tuple[str, str]:
+    text = safe_str(artist)
+    if not text:
+        return "", ""
+    if font_measure(text) <= max_width:
+        return text, ""
+
+    tokens = [tok for tok in text.split() if tok]
+    if len(tokens) < 2:
+        return trim_to_width(text, max_width, font_measure), ""
+
+    best_strict: Optional[Tuple[str, str, float]] = None
+    best_relaxed: Optional[Tuple[str, str, float]] = None
+    for i in range(1, len(tokens)):
+        left_tokens = tokens[:i]
+        right_tokens = tokens[i:]
+        left = " ".join(left_tokens)
+        right = " ".join(right_tokens)
+        if font_measure(left) > max_width or font_measure(right) > max_width:
+            continue
+        balance = abs(font_measure(left) - font_measure(right))
+        bad_orphan = (len(left_tokens[-1]) <= 2) or (len(right_tokens[0]) <= 2)
+        candidate = (left, right, balance)
+        if bad_orphan:
+            if best_relaxed is None or balance < best_relaxed[2]:
+                best_relaxed = candidate
+        else:
+            if best_strict is None or balance < best_strict[2]:
+                best_strict = candidate
+
+    chosen = best_strict or best_relaxed
+    if chosen is None:
+        return trim_to_width(text, max_width, font_measure), ""
+    return chosen[0], chosen[1]
+
+
+def wrap_artists_by_name(artists_list: Sequence[str], max_width: float, font_measure, max_lines: int = 2) -> List[str]:
+    artists = dedupe_preserve_order([safe_str(a) for a in artists_list])
+    if not artists:
+        return []
+
+    lines: List[str] = []
+    idx = 0
+    current = ""
+
+    while idx < len(artists):
+        artist = artists[idx]
+        candidate = artist if not current else f"{current}, {artist}"
+        if font_measure(candidate) <= max_width:
+            current = candidate
+            idx += 1
+            continue
+
+        if current:
+            lines.append(current)
+            current = ""
+            if len(lines) >= max_lines:
+                break
+            continue
+
+        first, second = split_artist_name_with_guardrails(artist, max_width, font_measure)
+        if first:
+            lines.append(first)
+        if len(lines) >= max_lines:
+            idx += 1
+            break
+        current = second
+        idx += 1
+
+    if current and len(lines) < max_lines:
+        lines.append(current)
+
+    lines = [safe_str(line) for line in lines if safe_str(line)]
+    if not lines:
+        lines = [trim_to_width(", ".join(artists), max_width, font_measure)]
+
+    if idx < len(artists):
+        last = safe_str(lines[-1]).rstrip(", ")
+        last_with_ellipsis = f"{last}, …" if last else "…"
+        lines[-1] = trim_to_width(last_with_ellipsis, max_width, font_measure)
+
+    return lines[:max_lines]
+
+
+def fit_artists_lines(
+    c: canvas.Canvas,
+    artists_list: Sequence[str],
+    max_width: float,
+    font_name: str,
+    start_size: int,
+    min_size: int,
+    max_lines: int = 2,
+) -> Tuple[int, List[str]]:
+    artists = dedupe_preserve_order([safe_str(a) for a in artists_list])
+    if not artists:
+        return min_size, ["—"]
+
+    best_size = min_size
+    best_lines: List[str] = []
+    for size in range(start_size, min_size - 1, -1):
+        measure = lambda text: c.stringWidth(text, font_name, size)
+        lines = wrap_artists_by_name(artists, max_width, measure, max_lines=max_lines)
+        if not lines:
+            continue
+        if any(measure(line) > max_width for line in lines):
+            continue
+        if not any(line.endswith("…") for line in lines):
+            return size, lines
+        if not best_lines:
+            best_size = size
+            best_lines = lines
+
+    if best_lines:
+        return best_size, best_lines
+
+    size = min_size
+    measure = lambda text: c.stringWidth(text, font_name, size)
+    lines = wrap_artists_by_name(artists, max_width, measure, max_lines=max_lines)
+    if not lines:
+        lines = ["—"]
+    return size, lines
+
+
+def draw_bold_or_fake(
+    c: canvas.Canvas,
+    x: float,
+    y: float,
+    text: str,
+    normal_font: str,
+    bold_font: str,
+    font_size: int,
+) -> None:
+    payload = safe_str(text)
+    if not payload:
+        return
+    if bold_font and (bold_font != normal_font):
+        c.setFont(bold_font, font_size)
+        c.drawString(x, y, payload)
+        return
+    c.setFont(normal_font, font_size)
+    c.drawString(x, y, payload)
+    c.drawString(x + 0.35, y, payload)
+
+
+def draw_primary_artist_line(
+    c: canvas.Canvas,
+    line_text: str,
+    primary_artist: str,
+    x_center: float,
+    y: float,
+    normal_font: str,
+    bold_font: str,
+    font_size: int,
+) -> None:
+    line = safe_str(line_text)
+    primary = safe_str(primary_artist)
+    if not line:
+        return
+
+    if primary and line.startswith(primary):
+        suffix = line[len(primary):]
+        primary_w = c.stringWidth(primary, bold_font or normal_font, font_size)
+        suffix_w = c.stringWidth(suffix, normal_font, font_size)
+        total_w = primary_w + suffix_w
+        x_left = x_center - (total_w / 2)
+        draw_bold_or_fake(
+            c,
+            x=x_left,
+            y=y,
+            text=primary,
+            normal_font=normal_font,
+            bold_font=bold_font,
+            font_size=font_size,
+        )
+        c.setFont(normal_font, font_size)
+        c.drawString(x_left + primary_w, y, suffix)
+        return
+
+    c.setFont(normal_font, font_size)
+    c.drawCentredString(x_center, y, line)
 
 
 # -----------------------------
@@ -666,7 +936,7 @@ def draw_back_card(
     w: float,
     h: float,
     title: str,
-    artists: str,
+    artists_list: List[str],
     year: str,
     owners: List[str],
     expansion_code: str,
@@ -677,7 +947,8 @@ def draw_back_card(
     gradient_pngs: Sequence[Path],
     selection_key: str,
 ) -> str:
-    key = selection_key or f"{title}|{artists}|{year}|{expansion_code}"
+    artists_text_for_key = ", ".join([safe_str(a) for a in artists_list if safe_str(a)])
+    key = selection_key or f"{title}|{artists_text_for_key}|{year}|{expansion_code}"
     base_hex = stable_palette_pick(key, NEON_BG_PALETTE)
 
     gradient_label = ""
@@ -735,19 +1006,35 @@ def draw_back_card(
     y_baseline = y_center_target - (0.35 * year_size)
     c.drawCentredString(x_center, y_baseline, year_str)
 
-    # 3) Artistas
-    artists_text = safe_str(artists) or "—"
-    fit_two_lines_centered(
+    # 3) Artistas (wrap por artista completo + primer artista en negrita)
+    artists_clean = dedupe_preserve_order(artists_list)
+    artists_primary = artists_clean[0] if artists_clean else ""
+    artists_size, artists_lines = fit_artists_lines(
         c,
-        artists_text,
-        x_center=x_center,
-        y_top=y + h * 0.28,
+        artists_list=artists_clean,
         max_width=max_w,
         font_name=fonts["regular"],
         start_size=13,
         min_size=8,
-        line_gap=1.4,
+        max_lines=2,
     )
+    if not artists_lines:
+        artists_lines = ["—"]
+
+    artists_y_top = y + h * 0.28
+    draw_primary_artist_line(
+        c,
+        line_text=artists_lines[0],
+        primary_artist=artists_primary,
+        x_center=x_center,
+        y=artists_y_top,
+        normal_font=fonts["regular"],
+        bold_font=fonts.get("bold", fonts["regular"]),
+        font_size=artists_size,
+    )
+    if len(artists_lines) > 1 and safe_str(artists_lines[1]):
+        c.setFont(fonts["regular"], artists_size)
+        c.drawCentredString(x_center, artists_y_top - (artists_size + 1.4), artists_lines[1])
 
     # 4) Footer cursiva
     owners_str = ", ".join(owners) if owners else ""
@@ -924,7 +1211,8 @@ def generate_pdf(
                 cy = y0 + (rows - 1 - r) * card
 
                 title = safe_str(card_data.get("title_display") or card_data.get("title_canon") or "")
-                artists = safe_str(card_data.get("artists_display") or card_data.get("artists_canon") or "")
+                artists_list = parse_artists_list(card_data)
+                artists_joined = ", ".join(artists_list)
                 year = card_data.get("year", "")
                 expansion = safe_str(card_data.get("expansion_code") or "I")
                 owners = parse_owners(card_data)
@@ -934,9 +1222,9 @@ def generate_pdf(
                     or card_data.get("song_id")
                     or card_data.get("track_id")
                 )
-                gradient_key = canonical_id or f"{title}|{artists}|{safe_str(year)}|{expansion}"
+                gradient_key = canonical_id or f"{title}|{artists_joined}|{safe_str(year)}|{expansion}"
 
-                if title or artists or safe_str(year):
+                if title or artists_joined or safe_str(year):
                     gradient_label = draw_back_card(
                         c,
                         cx,
@@ -944,7 +1232,7 @@ def generate_pdf(
                         card,
                         card,
                         title=title,
-                        artists=artists,
+                        artists_list=artists_list,
                         year=year,
                         owners=owners,
                         expansion_code=expansion,
